@@ -1,29 +1,46 @@
 "use client";
 
-import { Archive, Clock, Mail } from "lucide-react";
+import { Bell, MailOpen, Trash2 } from "lucide-react";
 import { ClassificationBadge } from "./ClassificationBadge";
 import { LanguageFlag } from "./LanguageFlag";
 import type { EmailListItem as EmailListItemType } from "@/lib/types";
-import { avatarBg, cn, formatRelativeTime, senderInitials } from "@/lib/utils";
+import { avatarBg, cn, formatRelativeTime, MOCK_REFERENCE_NOW_MS, senderInitials } from "@/lib/utils";
 
 interface Props {
   email: EmailListItemType;
   isSelected: boolean;
   onSelect: () => void;
+  onToggleRead: () => void;
+  onSnooze: () => void;
+  onDelete: () => void;
 }
 
-export function EmailListItem({ email, isSelected, onSelect }: Props) {
+export function EmailListItem({
+  email,
+  isSelected,
+  onSelect,
+  onToggleRead,
+  onSnooze,
+  onDelete,
+}: Props) {
   const isUnread = email.is_unread;
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onSelect}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
       className={cn(
-        "group relative w-full text-left transition-colors",
-        "border-l-2 border-l-transparent",
-        isUnread && "border-l-accent",
+        "group relative w-full cursor-pointer text-left transition-colors",
+        "border-l-2",
+        isUnread ? "border-l-accent" : "border-l-transparent",
         isSelected
-          ? "bg-surface-elevated border-l-accent"
+          ? "bg-surface-elevated"
           : "bg-surface hover:bg-surface-elevated",
       )}
     >
@@ -47,7 +64,7 @@ export function EmailListItem({ email, isSelected, onSelect }: Props) {
               {email.from_name ?? email.from_email}
             </span>
             <span className="ml-auto shrink-0 text-small text-text-tertiary">
-              {formatRelativeTime(email.received_at)}
+              {formatRelativeTime(email.received_at, MOCK_REFERENCE_NOW_MS)}
             </span>
           </div>
           <div className="flex items-center gap-1.5">
@@ -78,41 +95,54 @@ export function EmailListItem({ email, isSelected, onSelect }: Props) {
         </div>
 
         <div className="hidden items-center gap-1 opacity-0 transition-opacity group-hover:flex group-hover:opacity-100">
-          <span
-            role="button"
-            tabIndex={-1}
-            aria-label="Archive"
-            title="Archive (e)"
-            className="rounded p-1 text-text-tertiary hover:bg-bg hover:text-text-primary"
+          <QuickAction
+            icon={Bell}
+            label="Snooze"
             onClick={(event) => {
               event.stopPropagation();
-              // v0.1 wires this to the archive endpoint.
+              onSnooze();
             }}
-          >
-            <Archive className="h-4 w-4" />
-          </span>
-          <span
-            role="button"
-            tabIndex={-1}
-            aria-label="Snooze"
-            title="Snooze"
-            className="rounded p-1 text-text-tertiary hover:bg-bg hover:text-text-primary"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <Clock className="h-4 w-4" />
-          </span>
-          <span
-            role="button"
-            tabIndex={-1}
-            aria-label="Toggle read"
-            title="Toggle read (u)"
-            className="rounded p-1 text-text-tertiary hover:bg-bg hover:text-text-primary"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <Mail className="h-4 w-4" />
-          </span>
+          />
+          <QuickAction
+            icon={MailOpen}
+            label={isUnread ? "Mark as read" : "Mark as unread"}
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleRead();
+            }}
+          />
+          <QuickAction
+            icon={Trash2}
+            label="Delete"
+            onClick={(event) => {
+              event.stopPropagation();
+              onDelete();
+            }}
+          />
         </div>
       </div>
+    </div>
+  );
+}
+
+function QuickAction({
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  icon: typeof Bell;
+  label: string;
+  onClick: (event: React.MouseEvent<HTMLButtonElement>) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className="rounded p-1 text-text-tertiary hover:bg-bg hover:text-text-primary"
+    >
+      <Icon className="h-4 w-4" />
     </button>
   );
 }

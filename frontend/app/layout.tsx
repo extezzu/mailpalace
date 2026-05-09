@@ -15,7 +15,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
-      <body>{children}</body>
+      {/* `suppressHydrationWarning` is intentional: browser extensions
+          (Bitwarden, password managers, accessibility tools) inject
+          attributes into <body> before React hydrates, which is otherwise
+          flagged as a mismatch. */}
+      <body suppressHydrationWarning>{children}</body>
     </html>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Lock, Sparkles } from "lucide-react";
 
 interface Props {
@@ -7,14 +8,61 @@ interface Props {
   langs: string[];
   triagedCount: number;
   totalCount: number;
+  summaryLocale: string;
+  onSummaryLocaleChange: (locale: string) => void;
 }
 
+const SUMMARY_LANGS: { code: string; label: string }[] = [
+  { code: "en", label: "English" },
+  { code: "ru", label: "Русский" },
+  { code: "uk", label: "Українська" },
+  { code: "da", label: "Dansk" },
+  { code: "de", label: "Deutsch" },
+];
+
 /**
- * Top status bar. Tells the user at a glance that nothing has left the
- * machine, which model triaged the inbox, and which languages we picked up.
- * The differentiation pitch belongs in the chrome, not buried in a sidebar.
+ * Top status bar.
+ *
+ * The job of this strip is to telegraph the differentiation in chrome:
+ * the inbox is local, the LLM is reachable (or not), and the user can
+ * switch summary language without leaving the screen.
  */
-export function StatusBar({ provider, langs, triagedCount, totalCount }: Props) {
+export function StatusBar({
+  provider,
+  triagedCount,
+  totalCount,
+  summaryLocale,
+  onSummaryLocaleChange,
+}: Props) {
+  const [llmHealthy, setLlmHealthy] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function poll() {
+      try {
+        const resp = await fetch("/api/health");
+        if (!cancelled) setLlmHealthy(resp.ok);
+      } catch {
+        if (!cancelled) setLlmHealthy(false);
+      }
+    }
+    poll();
+    const id = window.setInterval(poll, 30_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, []);
+
+  const dotColor =
+    llmHealthy === null
+      ? "rgb(var(--text-tertiary))"
+      : llmHealthy
+        ? "rgb(91 138 117)"
+        : "rgb(var(--urgent))";
+
+  const triagedTitle = `${triagedCount} of ${totalCount} emails currently in your inbox have an AI summary attached. The remainder are awaiting triage.`;
+
   return (
     <div
       role="status"
@@ -22,17 +70,37 @@ export function StatusBar({ provider, langs, triagedCount, totalCount }: Props) 
     >
       <span className="inline-flex items-center gap-1.5 text-text-secondary">
         <Lock className="h-3 w-3" />
-        Local · email never leaves this machine
+        Local
       </span>
-      <span className="inline-flex items-center gap-1.5">
+
+      <span className="inline-flex items-center gap-1.5" title={`Active LLM provider: ${provider}`}>
+        <span
+          aria-hidden
+          className="inline-block h-2 w-2 rounded-full"
+          style={{ backgroundColor: dotColor }}
+        />
         <Sparkles className="h-3 w-3" />
         {provider}
       </span>
-      <span>
-        {langs.length} {langs.length === 1 ? "language" : "languages"}: {langs.join(" · ")}
+
+      <span className="inline-flex items-center gap-2 normal-case tracking-normal" title="Switch the language the AI summarises into">
+        <span className="text-text-tertiary">Summary in</span>
+        <select
+          value={summaryLocale}
+          onChange={(event) => onSummaryLocaleChange(event.target.value)}
+          aria-label="Summary language"
+          className="rounded border border-border bg-surface px-1.5 py-0.5 text-text-primary outline-none focus:border-accent"
+        >
+          {SUMMARY_LANGS.map((lang) => (
+            <option key={lang.code} value={lang.code}>
+              {lang.label}
+            </option>
+          ))}
+        </select>
       </span>
-      <span className="ml-auto">
-        {triagedCount}/{totalCount} triaged today
+
+      <span className="ml-auto" title={triagedTitle}>
+        {triagedCount}/{totalCount} triaged
       </span>
     </div>
   );

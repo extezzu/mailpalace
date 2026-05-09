@@ -1,118 +1,219 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { EmailListItem as EmailRow } from "@/components/email/EmailListItem";
-import { FilterBar, type Filter } from "@/components/email/FilterBar";
 import { Sidebar } from "@/components/email/Sidebar";
 import { StatusBar } from "@/components/StatusBar";
 import { ThreadViewer } from "@/components/email/ThreadViewer";
 import { AiMetaSidebar } from "@/components/email/AiMetaSidebar";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { MOCK_EMAILS } from "@/lib/mock-data";
-import type { Classification } from "@/lib/types";
+import type { Filter } from "@/components/email/FilterBar";
+import type { Classification, EmailListItem } from "@/lib/types";
+
+// Per-row state that lives only on the client. v0.1 syncs this back to
+// the FastAPI repo via PATCH /api/email/{id}.
+interface RowFlags {
+  read: boolean;
+  snoozed: boolean;
+  deleted: boolean;
+  sent: boolean;
+}
 
 const BODIES: Record<number, string> = {
   1:
     "Hi Dmytro,\n\n" +
-    "The security team flagged two open questions on the webhook signing flow we discussed last Thursday. Could you put together a one-pager addressing both points by Tuesday EOD? The board review is Wednesday morning and we need this signed off before then.\n\n" +
-    "Specifically:\n" +
-    "1. Are we rotating the signing secret on a fixed schedule, or only on compromise events?\n" +
-    "2. What's the upgrade path if we deprecate v1 of the signature algorithm?\n\n" +
-    "If you need the security team's notes, I can forward them. Otherwise, your call.\n\n" +
-    "Thanks,\nAnna",
+    "The security team flagged two open questions on the webhook signing flow we discussed last Thursday. Could you put together a one-pager addressing both points by Tuesday EOD? The board review is Wednesday morning and we need this signed off before then.\n\nThanks,\nAnna",
   2:
     "@sven-rasmussen requested your review on this pull request.\n\n" +
     "PR #1842: Add retry logic to token refresh\n" +
     "14 files changed, +312 -47\n\n" +
-    "Description:\n" +
-    "Adds exponential backoff to the OAuth token refresh path in handlers/auth/refresh.ts. Previously, a single 5xx from the upstream caused users to be silently signed out — this PR retries up to 3 times with jitter before surfacing the error.\n\n" +
-    "Tests: included. Manual QA: tested against staging with simulated 502s.\n\n" +
     "View on GitHub: https://github.com/anthropics/claude-code/pull/1842",
   3:
-    "Привіт, Дмитро!\n\n" +
-    'Бачив твій PolyPalace на GitHub — крута робота. У нас в команді на цьому тижні запускаємо схожий проект (memory layer для Claude Desktop поверх Notion + Linear) і є кілька питань. Можемо коротко на 20 хвилин у п\'ятницю?\n\n' +
-    "Зокрема цікавлять:\n" +
-    "1. Як ти вирішив питання permissions при доступі до приватних репозиторіїв?\n" +
-    "2. Як виглядає твій reranking pipeline на 50k+ векторів?\n\n" +
-    "Дякую,\nОлександр",
-  4:
-    "Anthropic has sent you a receipt for $24.18 USD on May 9, 2026.\n\n" +
-    "Description: Claude API usage (April 2026)\n" +
-    "Card: Visa ending in 4218\n\n" +
-    "View invoice: https://invoice.stripe.com/i/abc123",
+    "Привіт, Дмитро!\n\nБачив твій PolyPalace на GitHub. Можемо коротко на 20 хвилин у п'ятницю?\n\nДякую,\nОлександр",
+  4: "Anthropic has sent you a receipt for $24.18 USD on May 9, 2026.",
   5:
-    "Привет!\n\n" +
-    "Подборка статей за прошедшую неделю:\n\n" +
-    "1. Anthropic запускает MCP 2.0 со streaming.\n" +
-    "2. OpenRouter поднимает раунд $50M.\n" +
-    "3. Cursor добавляет inline tool calls.\n" +
-    "4. Discussion: где границы автономности AI агентов.\n\n" +
-    "Полные ссылки внутри.",
+    "Привет!\n\nПодборка статей за прошедшую неделю:\n\n1. Anthropic запускает MCP 2.0 со streaming.\n2. OpenRouter поднимает раунд $50M.\n3. Cursor добавляет inline tool calls.",
   6:
-    "Top 10 stories from Hacker News for Saturday May 9:\n\n" +
-    "1. Show HN: I built an email AI agent in a weekend (847 points)\n" +
-    "2. The hidden costs of LLM APIs (612 points)\n" +
-    "3. Postgres 18 release notes (445 points)\n" +
-    "4. ...",
+    "Top 10 stories from Hacker News for Saturday May 9:\n\n1. Show HN: I built an email AI agent in a weekend (847 points)\n2. The hidden costs of LLM APIs (612 points)",
   7:
-    "Hej Dmytro,\n\n" +
-    "Din årsopgørelse for indkomståret 2025 er nu tilgængelig i TastSelv. Log ind på skat.dk for at se opgørelsen og eventuelle rettelser.\n\n" +
-    "Med venlig hilsen,\nSkattestyrelsen",
+    "Hej Dmytro,\n\nDin årsopgørelse for indkomståret 2025 er nu tilgængelig i TastSelv. Log ind på skat.dk for at se opgørelsen.\n\nMed venlig hilsen,\nSkattestyrelsen",
   8:
-    "Your Notion workspace activity for the past week:\n\n" +
-    "- 14 pages updated\n" +
-    "- 3 new comments on \"Q2 product roadmap\"\n" +
-    "- 2 page templates created",
+    "Your Notion workspace activity for the past week:\n\n- 14 pages updated\n- 3 new comments on \"Q2 product roadmap\"",
   9:
-    "Issue: MAIL-12\n" +
-    "Title: Add Russian draft generation\n" +
-    "Status: Todo\n" +
-    "Assignee: dmytro\n" +
-    "Reporter: sven-rasmussen\n" +
-    "Priority: Medium\n\n" +
-    "Description: When user receives Russian email, draft generator should produce a Russian reply. Currently always English.",
+    "Issue: MAIL-12\nTitle: Add Russian draft generation\nStatus: Todo\nAssignee: dmytro",
   10:
-    "Hej Dmytro!\n\n" +
-    "Spar 30% hos H&M denne uge når du betaler med Klarna. Tilbuddet gælder til og med søndag aften.",
+    "Hej Dmytro!\n\nSpar 30% hos H&M denne uge når du betaler med Klarna.",
 };
 
-export default function HomePage() {
-  const [activeFilter, setActiveFilter] = useState<Filter>("all");
-  const [selectedId, setSelectedId] = useState<number | null>(MOCK_EMAILS[0]?.id ?? null);
+const NEWSLETTERS: Classification[] = ["newsletter", "promotion"];
 
-  const filtered = useMemo(() => {
-    if (activeFilter === "all") return MOCK_EMAILS;
-    return MOCK_EMAILS.filter((e) => e.ai?.classification === activeFilter);
-  }, [activeFilter]);
+function buildInitialFlags(): Record<number, RowFlags> {
+  const out: Record<number, RowFlags> = {};
+  for (const email of MOCK_EMAILS) {
+    out[email.id] = {
+      read: !email.is_unread,
+      snoozed: false,
+      deleted: false,
+      sent: false,
+    };
+  }
+  return out;
+}
+
+export default function HomePage() {
+  const router = useRouter();
+  const [activeFilter, setActiveFilter] = useState<Filter>("inbox");
+  const [selectedId, setSelectedId] = useState<number | null>(MOCK_EMAILS[0]?.id ?? null);
+  const [flags, setFlags] = useState<Record<number, RowFlags>>(() => buildInitialFlags());
+  const [accountEmail, setAccountEmail] = useState("demo@mailpalace.local");
+  const [summaryLocale, setSummaryLocale] = useState<string>("en");
+
+  // Pull the active account label and the current summary locale from the
+  // backend on mount; fall back to demo defaults if the API is unreachable.
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const settingsResp = await fetch("/api/settings");
+        if (settingsResp.ok && !cancelled) {
+          const data = await settingsResp.json();
+          setSummaryLocale(data.summary_locale ?? "en");
+        }
+      } catch {
+        /* ignore; keep defaults */
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Apply per-row flags onto the mock dataset.
+  const liveEmails: EmailListItem[] = useMemo(
+    () =>
+      MOCK_EMAILS.map((email) => ({
+        ...email,
+        is_unread: !flags[email.id]?.read,
+      })),
+    [flags],
+  );
 
   const counts = useMemo(() => {
-    const buckets: Record<Filter, number> = {
-      all: MOCK_EMAILS.length,
-      urgent: 0,
-      important: 0,
-      newsletter: 0,
+    const inboxFn = (e: EmailListItem) => {
+      const f = flags[e.id];
+      if (!f || f.deleted || f.sent || f.snoozed) return false;
+      const cls = e.ai?.classification ?? "other";
+      return !NEWSLETTERS.includes(cls as Classification);
+    };
+    return {
+      inbox: liveEmails.filter(inboxFn).length,
+      sent: 0,
+      trash: 0,
+      urgent: liveEmails.filter((e) => !flags[e.id]?.deleted && e.ai?.classification === "urgent").length,
+      important: liveEmails.filter((e) => !flags[e.id]?.deleted && e.ai?.classification === "important").length,
+      newsletter: liveEmails.filter(
+        (e) => !flags[e.id]?.deleted && NEWSLETTERS.includes((e.ai?.classification ?? "other") as Classification),
+      ).length,
       promotion: 0,
       transactional: 0,
       spam: 0,
       other: 0,
-    };
-    for (const e of MOCK_EMAILS) {
-      const c = (e.ai?.classification ?? "other") as Classification;
-      buckets[c] = (buckets[c] ?? 0) + 1;
-    }
-    return buckets;
-  }, []);
+    } as const;
+  }, [liveEmails, flags]);
+
+  const trashCount = useMemo(
+    () => liveEmails.filter((e) => flags[e.id]?.deleted).length,
+    [liveEmails, flags],
+  );
+  const sentCount = useMemo(
+    () => liveEmails.filter((e) => flags[e.id]?.sent).length,
+    [liveEmails, flags],
+  );
+
+  const filtered = useMemo(() => {
+    const list = liveEmails.filter((email) => {
+      const f = flags[email.id];
+      if (!f) return false;
+      if (activeFilter === "trash") return f.deleted;
+      if (f.deleted) return false;
+      if (activeFilter === "sent") return f.sent;
+      if (f.sent) return false;
+      if (activeFilter === "inbox") {
+        if (f.snoozed) return false;
+        const cls = email.ai?.classification ?? "other";
+        return !NEWSLETTERS.includes(cls as Classification);
+      }
+      // AI buckets filter by classification
+      return email.ai?.classification === activeFilter;
+    });
+    return list;
+  }, [liveEmails, flags, activeFilter]);
 
   const selected = filtered.find((e) => e.id === selectedId) ?? filtered[0] ?? null;
 
+  // Mark the currently-selected row as read (item #17). Runs once per
+  // selection change, no DB write yet -- v0.1 syncs to the backend.
+  useEffect(() => {
+    if (!selected) return;
+    setFlags((prev) => {
+      if (prev[selected.id]?.read) return prev;
+      return { ...prev, [selected.id]: { ...prev[selected.id], read: true } };
+    });
+  }, [selected?.id]);
+
   const langs = useMemo(() => {
     const set = new Set<string>();
-    for (const e of MOCK_EMAILS) if (e.ai?.language) set.add(e.ai.language);
+    for (const email of liveEmails) if (email.ai?.language) set.add(email.ai.language);
     return [...set];
-  }, []);
-  const triagedCount = MOCK_EMAILS.filter((e) => e.ai?.classification).length;
-  const provider =
-    MOCK_EMAILS.find((e) => e.ai?.provider)?.ai?.provider ?? "ollama:llama3.1:8b";
+  }, [liveEmails]);
+  const triagedCount = liveEmails.filter((e) => e.ai?.classification).length;
+  const provider = liveEmails.find((e) => e.ai?.provider)?.ai?.provider ?? "ollama:llama3.1:8b";
+
+  function toggleRead(emailId: number) {
+    setFlags((prev) => ({
+      ...prev,
+      [emailId]: { ...prev[emailId], read: !prev[emailId].read },
+    }));
+  }
+
+  function snooze(emailId: number) {
+    setFlags((prev) => ({
+      ...prev,
+      [emailId]: { ...prev[emailId], snoozed: true },
+    }));
+  }
+
+  function deleteEmail(emailId: number) {
+    setFlags((prev) => ({
+      ...prev,
+      [emailId]: { ...prev[emailId], deleted: true },
+    }));
+  }
+
+  function markSent(emailId: number) {
+    setFlags((prev) => ({
+      ...prev,
+      [emailId]: { ...prev[emailId], sent: true, read: true },
+    }));
+  }
+
+  async function changeSummaryLocale(next: string) {
+    setSummaryLocale(next);
+    try {
+      await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ summary_locale: next }),
+      });
+    } catch {
+      /* setting is in-memory only in v0; OK to fail silently */
+    }
+  }
+
+  const accountInitial = accountEmail.charAt(0);
 
   return (
     <main className="flex h-screen w-screen flex-col overflow-hidden">
@@ -120,26 +221,47 @@ export default function HomePage() {
         provider={provider}
         langs={langs}
         triagedCount={triagedCount}
-        totalCount={MOCK_EMAILS.length}
+        totalCount={liveEmails.length}
+        summaryLocale={summaryLocale}
+        onSummaryLocaleChange={changeSummaryLocale}
       />
       <div className="flex flex-1 min-h-0">
-        <Sidebar />
+        <Sidebar
+          active={activeFilter}
+          counts={counts}
+          trashCount={trashCount}
+          sentCount={sentCount}
+          accountEmail={accountEmail}
+          accountInitial={accountInitial}
+          onSelect={setActiveFilter}
+          onSettings={() => router.push("/settings")}
+        />
 
         <section className="flex h-full w-[380px] shrink-0 flex-col border-r border-border bg-surface">
-          <FilterBar active={activeFilter} counts={counts} onChange={setActiveFilter} />
           <div className="flex-1 overflow-y-auto scrollbar-thin">
             {filtered.length === 0 ? (
               <EmptyState
                 title="Nothing here"
-                description="No emails match the current filter."
+                description={
+                  activeFilter === "trash"
+                    ? "Trash is empty."
+                    : activeFilter === "sent"
+                      ? "Replies you send will appear here."
+                      : activeFilter === "newsletter"
+                        ? "Newsletter digest is empty. New newsletters land here automatically."
+                        : "Nothing to action right now."
+                }
               />
             ) : (
-              filtered.map((e) => (
+              filtered.map((email) => (
                 <EmailRow
-                  key={e.id}
-                  email={e}
-                  isSelected={selected?.id === e.id}
-                  onSelect={() => setSelectedId(e.id)}
+                  key={email.id}
+                  email={email}
+                  isSelected={selected?.id === email.id}
+                  onSelect={() => setSelectedId(email.id)}
+                  onToggleRead={() => toggleRead(email.id)}
+                  onSnooze={() => snooze(email.id)}
+                  onDelete={() => deleteEmail(email.id)}
                 />
               ))
             )}
@@ -152,13 +274,14 @@ export default function HomePage() {
               <ThreadViewer
                 email={selected}
                 body={BODIES[selected.id] ?? selected.snippet ?? ""}
+                onMarkRepliedSent={() => markSent(selected.id)}
               />
             </div>
             <AiMetaSidebar email={selected} />
           </section>
         ) : (
           <section className="flex h-full flex-1 items-center justify-center bg-surface">
-            <EmptyState title="Inbox zero." description="No emails to triage right now." />
+            <EmptyState title="Inbox zero." description="Nothing waiting on you." />
           </section>
         )}
       </div>

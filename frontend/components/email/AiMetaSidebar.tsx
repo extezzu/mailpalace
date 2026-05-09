@@ -1,8 +1,22 @@
 import { Sparkles } from "lucide-react";
 import type { EmailListItem } from "@/lib/types";
 import { ClassificationBadge } from "./ClassificationBadge";
-import { LanguageFlag } from "./LanguageFlag";
-import { formatRelativeTime } from "@/lib/utils";
+import { formatRelativeTime, MOCK_REFERENCE_NOW_MS } from "@/lib/utils";
+
+const LANGUAGE_NAMES: Record<string, string> = {
+  en: "English",
+  ru: "Russian",
+  uk: "Ukrainian",
+  da: "Danish",
+  de: "German",
+  fr: "French",
+  es: "Spanish",
+  pl: "Polish",
+  pt: "Portuguese",
+  it: "Italian",
+  nl: "Dutch",
+  sv: "Swedish",
+};
 
 interface Props {
   email: EmailListItem;
@@ -42,8 +56,9 @@ export function AiMetaSidebar({ email }: Props) {
         </div>
         <div className="flex items-center gap-2 text-small text-text-secondary">
           <span>Language</span>
-          <LanguageFlag lang={ai.language} hideFor="" />
-          <span className="font-mono">{ai.language ?? "—"}</span>
+          <span>
+            {ai.language ? LANGUAGE_NAMES[ai.language] ?? ai.language.toUpperCase() : "—"}
+          </span>
         </div>
       </div>
 
@@ -54,16 +69,8 @@ export function AiMetaSidebar({ email }: Props) {
         <p className="text-body text-text-primary">{ai.suggested_action ?? "—"}</p>
       </div>
 
-      <div className="mt-auto space-y-1 border-t border-border pt-4">
-        <div className="text-caption font-mono uppercase tracking-wider text-text-tertiary">
-          Provider
-        </div>
-        <p className="font-mono text-small text-text-secondary truncate" title={ai.provider ?? ""}>
-          {ai.provider ?? "—"}
-        </p>
-        <p className="text-caption text-text-tertiary">
-          {formatRelativeTime(email.received_at)} ago
-        </p>
+      <div className="mt-auto border-t border-border pt-4 text-caption text-text-tertiary">
+        Triaged {formatRelativeTime(email.received_at, MOCK_REFERENCE_NOW_MS)} ago
       </div>
     </aside>
   );

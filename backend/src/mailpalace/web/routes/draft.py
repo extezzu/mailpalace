@@ -37,7 +37,19 @@ class DraftResponse(BaseModel):
 )
 async def post_draft(req: DraftRequest) -> DraftResponse:
     """Run the draft pipeline and return the generated reply."""
-    draft = await generate_draft(req.email_id, req.instructions)
+    try:
+        draft = await generate_draft(req.email_id, req.instructions)
+    except RuntimeError as exc:
+        # Router exhausted every configured provider; surface a 503 the
+        # frontend can show as "no LLM available" instead of a bare 500.
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "No LLM provider is reachable. Start Ollama "
+                "(`ollama serve` + `ollama pull llama3.1:8b`) or set "
+                "MAILPALACE_ANTHROPIC_API_KEY / MAILPALACE_OPENAI_API_KEY."
+            ),
+        ) from exc
     if draft is None:
         raise HTTPException(status_code=404, detail="Email not found")
     return DraftResponse(
