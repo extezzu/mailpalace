@@ -11,6 +11,7 @@ import json
 import logging
 import re
 
+from mailpalace.config import get_settings
 from mailpalace.db.engine import session_scope
 from mailpalace.db.repo import upsert_ai_metadata
 from mailpalace.db.schema import Email
@@ -26,6 +27,7 @@ _CODE_FENCE_RE = re.compile(r"^\s*```(?:json)?\s*\n?(?P<body>.*?)\n?```\s*$", re
 
 async def triage_email(email_id: int) -> bool:
     """Run the triage pipeline against a single email. Returns True on success."""
+    settings = get_settings()
     with session_scope() as session:
         email = session.get(Email, email_id)
         if email is None:
@@ -38,6 +40,8 @@ async def triage_email(email_id: int) -> bool:
             subject=email.subject,
             received_at=email.received_at.isoformat(),
             body=body,
+            summary_locale=settings.summary_locale,
+            user_addressing=settings.user_addressing,
         )
 
     router = get_router()
@@ -75,7 +79,8 @@ async def triage_email(email_id: int) -> bool:
             language_code=parsed.get("language_code", language),
             classification=parsed.get("classification"),
             classification_confidence=parsed.get("classification_confidence"),
-            summary_ru=parsed.get("summary_ru"),
+            summary=parsed.get("summary") or parsed.get("summary_ru"),
+            summary_locale=settings.summary_locale,
             suggested_action=parsed.get("suggested_action"),
             provider_used=resp.provider,
             model_version=resp.provider.split(":", 1)[-1] if ":" in resp.provider else None,

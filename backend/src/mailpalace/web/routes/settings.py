@@ -33,7 +33,7 @@ class SettingsView(BaseModel):
     anthropic: RemoteProviderState
     openai: RemoteProviderState
     poll_interval_minutes: int
-    summary_locale: Literal["ru", "en"]
+    summary_locale: str
     user_addressing: Literal["ty", "vy"]
 
 
@@ -46,6 +46,8 @@ class SettingsPatch(BaseModel):
     openai_api_key: str | None = None
     openai_model: str | None = None
     poll_interval_minutes: int | None = None
+    summary_locale: str | None = None
+    user_addressing: Literal["ty", "vy"] | None = None
 
 
 def _to_view(s: Settings) -> SettingsView:

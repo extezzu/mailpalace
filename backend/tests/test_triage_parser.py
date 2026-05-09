@@ -9,11 +9,11 @@ def test_parses_clean_json() -> None:
     text = (
         '{"language_code": "en", "classification": "important", '
         '"classification_confidence": 0.9, '
-        '"summary_ru": "test", "suggested_action": "do it"}'
+        '"summary": "test", "suggested_action": "do it"}'
     )
     parsed = _parse_triage_response(text, fallback_language="en")
     assert parsed["classification"] == "important"
-    assert parsed["summary_ru"] == "test"
+    assert parsed["summary"] == "test"
 
 
 def test_strips_code_fence() -> None:

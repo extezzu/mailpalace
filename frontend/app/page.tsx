@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { EmailListItem as EmailRow } from "@/components/email/EmailListItem";
 import { FilterBar, type Filter } from "@/components/email/FilterBar";
 import { Sidebar } from "@/components/email/Sidebar";
+import { StatusBar } from "@/components/StatusBar";
 import { ThreadViewer } from "@/components/email/ThreadViewer";
 import { AiMetaSidebar } from "@/components/email/AiMetaSidebar";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -104,43 +105,63 @@ export default function HomePage() {
 
   const selected = filtered.find((e) => e.id === selectedId) ?? filtered[0] ?? null;
 
+  const langs = useMemo(() => {
+    const set = new Set<string>();
+    for (const e of MOCK_EMAILS) if (e.ai?.language) set.add(e.ai.language);
+    return [...set];
+  }, []);
+  const triagedCount = MOCK_EMAILS.filter((e) => e.ai?.classification).length;
+  const provider =
+    MOCK_EMAILS.find((e) => e.ai?.provider)?.ai?.provider ?? "ollama:llama3.1:8b";
+
   return (
-    <main className="flex h-screen w-screen overflow-hidden">
-      <Sidebar />
+    <main className="flex h-screen w-screen flex-col overflow-hidden">
+      <StatusBar
+        provider={provider}
+        langs={langs}
+        triagedCount={triagedCount}
+        totalCount={MOCK_EMAILS.length}
+      />
+      <div className="flex flex-1 min-h-0">
+        <Sidebar />
 
-      <section className="flex h-full w-[380px] shrink-0 flex-col border-r border-border bg-surface">
-        <FilterBar active={activeFilter} counts={counts} onChange={setActiveFilter} />
-        <div className="flex-1 overflow-y-auto scrollbar-thin">
-          {filtered.length === 0 ? (
-            <EmptyState
-              title="Nothing here"
-              description="No emails match the current filter."
-            />
-          ) : (
-            filtered.map((e) => (
-              <EmailRow
-                key={e.id}
-                email={e}
-                isSelected={selected?.id === e.id}
-                onSelect={() => setSelectedId(e.id)}
+        <section className="flex h-full w-[380px] shrink-0 flex-col border-r border-border bg-surface">
+          <FilterBar active={activeFilter} counts={counts} onChange={setActiveFilter} />
+          <div className="flex-1 overflow-y-auto scrollbar-thin">
+            {filtered.length === 0 ? (
+              <EmptyState
+                title="Nothing here"
+                description="No emails match the current filter."
               />
-            ))
-          )}
-        </div>
-      </section>
-
-      {selected ? (
-        <section className="flex h-full flex-1 min-w-0">
-          <div className="flex-1 min-w-0 bg-surface">
-            <ThreadViewer email={selected} body={BODIES[selected.id] ?? selected.snippet ?? ""} />
+            ) : (
+              filtered.map((e) => (
+                <EmailRow
+                  key={e.id}
+                  email={e}
+                  isSelected={selected?.id === e.id}
+                  onSelect={() => setSelectedId(e.id)}
+                />
+              ))
+            )}
           </div>
-          <AiMetaSidebar email={selected} />
         </section>
-      ) : (
-        <section className="flex h-full flex-1 items-center justify-center bg-surface">
-          <EmptyState title="Inbox zero." description="No emails to triage right now." />
-        </section>
-      )}
+
+        {selected ? (
+          <section className="flex h-full flex-1 min-w-0">
+            <div className="flex-1 min-w-0 bg-surface">
+              <ThreadViewer
+                email={selected}
+                body={BODIES[selected.id] ?? selected.snippet ?? ""}
+              />
+            </div>
+            <AiMetaSidebar email={selected} />
+          </section>
+        ) : (
+          <section className="flex h-full flex-1 items-center justify-center bg-surface">
+            <EmptyState title="Inbox zero." description="No emails to triage right now." />
+          </section>
+        )}
+      </div>
     </main>
   );
 }

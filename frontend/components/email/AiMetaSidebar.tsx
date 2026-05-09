@@ -26,7 +26,7 @@ export function AiMetaSidebar({ email }: Props) {
       <div className="flex items-center gap-1.5 text-caption font-mono uppercase tracking-wider text-text-tertiary">
         <Sparkles className="h-3 w-3" /> Summary
       </div>
-      <p className="text-body text-ai-meta">{ai.summary_ru ?? "—"}</p>
+      <p className="text-body text-ai-meta">{ai.summary ?? "—"}</p>
 
       <div className="space-y-2 border-t border-border pt-4">
         <div className="text-caption font-mono uppercase tracking-wider text-text-tertiary">

@@ -64,8 +64,16 @@ export function EmailListItem({ email, isSelected, onSelect }: Props) {
               <ClassificationBadge category={email.ai.classification} />
             )}
           </div>
-          <p className="truncate text-small text-text-secondary">
-            {email.snippet ?? ""}
+          <p
+            className="truncate text-small"
+            style={
+              email.ai?.summary
+                ? { color: "rgb(var(--ai-meta))" }
+                : { color: "rgb(var(--text-secondary))" }
+            }
+            title={email.ai?.summary ?? email.snippet ?? undefined}
+          >
+            {email.ai?.summary ?? email.snippet ?? ""}
           </p>
         </div>
 

@@ -1,6 +1,5 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@config "../tailwind.config.ts";
 
 @layer base {
   :root {
@@ -26,18 +25,18 @@
   }
 
   body {
-    @apply bg-bg text-text-primary font-sans antialiased text-body;
+    background: rgb(var(--bg));
+    color: rgb(var(--text-primary));
+    font-family: var(--font-geist-sans), Inter, system-ui, sans-serif;
     font-feature-settings: "ss01", "cv11";
+    -webkit-font-smoothing: antialiased;
+    font-size: 0.875rem;
+    line-height: 1.5;
   }
 
   ::selection {
-    @apply bg-accent/20 text-text-primary;
-  }
-}
-
-@layer components {
-  .panel-divider {
-    @apply border-r border-border;
+    background: rgb(var(--accent) / 0.2);
+    color: rgb(var(--text-primary));
   }
 }
 

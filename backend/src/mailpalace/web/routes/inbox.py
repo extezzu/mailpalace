@@ -19,7 +19,8 @@ class AiBlock(BaseModel):
     language: str | None = None
     classification: str | None = None
     confidence: float | None = None
-    summary_ru: str | None = None
+    summary: str | None = None
+    summary_locale: str | None = None
     suggested_action: str | None = None
     provider: str | None = None
 
@@ -89,7 +90,8 @@ def get_inbox(
                 language=row.ai.language_code,
                 classification=row.ai.classification,
                 confidence=row.ai.classification_confidence,
-                summary_ru=row.ai.summary_ru,
+                summary=row.ai.summary,
+                summary_locale=row.ai.summary_locale,
                 suggested_action=row.ai.suggested_action,
                 provider=row.ai.provider_used,
             )

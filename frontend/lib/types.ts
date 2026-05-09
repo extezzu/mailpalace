@@ -13,7 +13,8 @@ export interface AiBlock {
   language: string | null;
   classification: Classification | null;
   confidence: number | null;
-  summary_ru: string | null;
+  summary: string | null;
+  summary_locale: string | null;
   suggested_action: string | null;
   provider: string | null;
 }

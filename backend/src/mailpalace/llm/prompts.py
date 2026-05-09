@@ -1,17 +1,29 @@
-"""Prompt templates for triage, draft, classify."""
+"""Prompt templates for triage and draft generation."""
 
 from __future__ import annotations
 
 
-TRIAGE_SYSTEM = (
-    "You are an email triage assistant. You analyze a single email and reply ONLY in JSON "
-    "with the schema: {\"language_code\": \"en|ru|uk|de|da|...\", "
-    "\"classification\": \"urgent|important|newsletter|promotion|transactional|spam|other\", "
-    "\"classification_confidence\": 0.0-1.0, "
-    "\"summary_ru\": \"2-line Russian summary written directly to the user using 'ты'\", "
-    "\"suggested_action\": \"one short Russian imperative\"}. "
-    "No prose outside the JSON."
-)
+_LANG_NAMES = {
+    "en": "English",
+    "ru": "Russian",
+    "uk": "Ukrainian",
+    "da": "Danish",
+    "de": "German",
+    "fr": "French",
+    "es": "Spanish",
+    "pl": "Polish",
+    "pt": "Portuguese",
+    "it": "Italian",
+    "nl": "Dutch",
+    "sv": "Swedish",
+}
+
+
+def _addressing_clue(locale: str, addressing: str) -> str:
+    if locale != "ru":
+        return ""
+    return " using 'ты' (informal)" if addressing == "ty" else " using 'вы' (formal)"
+
 
 TRIAGE_USER_TEMPLATE = (
     "Email metadata:\n"
@@ -23,6 +35,21 @@ TRIAGE_USER_TEMPLATE = (
     "{body}\n"
     "---"
 )
+
+
+def build_triage_system(*, summary_locale: str, user_addressing: str) -> str:
+    lang_name = _LANG_NAMES.get(summary_locale, summary_locale)
+    addressing = _addressing_clue(summary_locale, user_addressing)
+    return (
+        "You are an email triage assistant. You analyze a single email and reply "
+        "ONLY in JSON with the schema: "
+        '{"language_code": "en|ru|uk|de|da|...", '
+        '"classification": "urgent|important|newsletter|promotion|transactional|spam|other", '
+        '"classification_confidence": 0.0-1.0, '
+        f'"summary": "2-line {lang_name} summary written directly to the user{addressing}", '
+        f'"suggested_action": "one short {lang_name} imperative"}}. '
+        "No prose outside the JSON."
+    )
 
 
 DRAFT_SYSTEM = (
@@ -50,7 +77,12 @@ def build_triage_prompt(
     subject: str | None,
     received_at: str,
     body: str,
+    summary_locale: str = "en",
+    user_addressing: str = "ty",
 ) -> tuple[str, str]:
+    system = build_triage_system(
+        summary_locale=summary_locale, user_addressing=user_addressing
+    )
     user = TRIAGE_USER_TEMPLATE.format(
         from_name=from_name or "(unknown sender)",
         from_email=from_email,
@@ -58,7 +90,7 @@ def build_triage_prompt(
         received_at=received_at,
         body=_truncate(body, 8000),
     )
-    return TRIAGE_SYSTEM, user
+    return system, user
 
 
 def build_draft_prompt(

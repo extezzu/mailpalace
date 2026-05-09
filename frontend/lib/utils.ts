@@ -5,8 +5,14 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatRelativeTime(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime();
+/**
+ * Format a delta as "5m", "3h", "2d", "1w", or a short date.
+ * `nowMs` defaults to {@link Date.now}; pass a stable reference during SSR to
+ * avoid hydration mismatches. Time-sensitive callers should bump it from a
+ * `useEffect` after mount.
+ */
+export function formatRelativeTime(iso: string, nowMs: number = Date.now()): string {
+  const ms = nowMs - new Date(iso).getTime();
   const min = Math.floor(ms / 60000);
   if (min < 1) return "now";
   if (min < 60) return `${min}m`;
@@ -17,8 +23,13 @@ export function formatRelativeTime(iso: string): string {
   const wk = Math.floor(day / 7);
   if (wk < 4) return `${wk}w`;
   const date = new Date(iso);
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
+
+/** Reference time used by mock data; lets components render the same relative
+ *  strings on the server and the first client render. Real data computes
+ *  against `Date.now()` directly. */
+export const MOCK_REFERENCE_NOW_MS = Date.parse("2026-05-10T00:00:00.000Z");
 
 export function senderInitials(name: string | null, email: string): string {
   if (name) {

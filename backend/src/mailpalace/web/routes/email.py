@@ -74,7 +74,8 @@ def get_email(email_id: int, session: Session = SessionDep) -> EmailDetail:
             language=row.ai.language_code,
             classification=row.ai.classification,
             confidence=row.ai.classification_confidence,
-            summary_ru=row.ai.summary_ru,
+            summary=row.ai.summary,
+            summary_locale=row.ai.summary_locale,
             suggested_action=row.ai.suggested_action,
             provider=row.ai.provider_used,
         )

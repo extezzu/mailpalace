@@ -45,9 +45,11 @@ class Settings(BaseSettings):
     poll_interval_minutes: int = 15
     triage_batch_size: int = 20
 
-    # Summary locale (per user; default Russian per product brief)
-    summary_locale: Literal["ru", "en"] = "ru"
-    user_addressing: Literal["ty", "vy"] = "ty"  # Russian "ты" vs "вы"
+    # Summary language. English by default; the user can pick any ISO 639-1
+    # code at runtime (most useful: en, ru, uk, da, de, fr, es).
+    summary_locale: str = "en"
+    # Russian addressing only matters when summary_locale == "ru".
+    user_addressing: Literal["ty", "vy"] = "ty"
 
     # When True, /api/inbox is allowed to serve mock data without a DB.
     demo_mode: bool = False
