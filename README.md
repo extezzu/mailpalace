@@ -52,14 +52,34 @@ python scripts/smoke.py
 
 ## Provider configuration
 
-Default install runs Ollama. You install Ollama separately and pull the model:
+The default install runs Ollama on the user's machine. The model is local and the backend never falls back to a templated draft -- if no provider is reachable, `/api/draft` returns a 503 and the dashboard tells you which install step is missing.
+
+### Install Ollama (Windows)
+
+```powershell
+winget install --id=Ollama.Ollama -e --accept-source-agreements --accept-package-agreements
+# launch the tray daemon (binds 127.0.0.1:11434)
+& "$env:LOCALAPPDATA\Programs\Ollama\ollama app.exe"
+ollama pull llama3.1:8b   # ~4.7 GB; lighter alternatives: llama3.2:3b, qwen2.5:3b
+```
+
+### Install Ollama (macOS)
 
 ```bash
-# https://ollama.com
+brew install ollama        # or download from https://ollama.com/download
+ollama serve &
 ollama pull llama3.1:8b
 ```
 
-To use Anthropic or OpenAI instead:
+### Install Ollama (Linux)
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+systemctl --user enable --now ollama
+ollama pull llama3.1:8b
+```
+
+### Use Anthropic or OpenAI instead
 
 ```bash
 export MAILPALACE_ACTIVE_PROVIDER=anthropic

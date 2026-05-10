@@ -69,6 +69,27 @@ function rowIsActive(flags: RowFlags | undefined): boolean {
   return Boolean(flags && !flags.deleted && !flags.sent && !flags.snoozed);
 }
 
+// Importance ladder for the inbox sort. Urgent stays on top, transactional
+// (receipts) outranks promotions, AI confidence breaks ties within the same
+// classification. v0.1 will replace this with a backend-side score that also
+// considers sender history and read patterns.
+const RANK: Record<string, number> = {
+  urgent: 100,
+  important: 80,
+  transactional: 60,
+  newsletter: 40,
+  promotion: 20,
+  spam: 5,
+  other: 10,
+};
+
+function importanceRank(email: EmailListItem): number {
+  const cls = email.ai?.classification ?? "other";
+  const base = RANK[cls] ?? 10;
+  const conf = email.ai?.confidence ?? 0;
+  return base + conf;
+}
+
 export default function HomePage() {
   const router = useRouter();
   const [activeFilter, setActiveFilter] = useState<Filter>("inbox");
@@ -141,7 +162,7 @@ export default function HomePage() {
   );
 
   const filtered = useMemo(() => {
-    return liveEmails.filter((email) => {
+    const list = liveEmails.filter((email) => {
       const f = flags[email.id];
       if (!f) return false;
       if (activeFilter === "trash") return f.deleted;
@@ -155,6 +176,18 @@ export default function HomePage() {
       // AI buckets: urgent / important / newsletter (also includes promo)
       if (activeFilter === "newsletter") return NEWSLETTERS.includes(cls);
       return cls === activeFilter;
+    });
+    // Inbox and AI buckets are ranked by importance; Sent and Trash keep
+    // chronological order so the user can see what they did last.
+    if (activeFilter === "trash" || activeFilter === "sent") {
+      return list.sort(
+        (a, b) => new Date(b.received_at).getTime() - new Date(a.received_at).getTime(),
+      );
+    }
+    return list.sort((a, b) => {
+      const rankDelta = importanceRank(b) - importanceRank(a);
+      if (rankDelta !== 0) return rankDelta;
+      return new Date(b.received_at).getTime() - new Date(a.received_at).getTime();
     });
   }, [liveEmails, flags, activeFilter]);
 

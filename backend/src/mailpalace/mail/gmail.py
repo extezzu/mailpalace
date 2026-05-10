@@ -41,3 +41,17 @@ class GmailSource:
 
     async def close(self) -> None:
         return None
+
+    async def mark_read(self, provider_msg_id: str, *, read: bool = True) -> None:
+        # TODO v0.1: users.messages.modify with addLabelIds=["UNREAD"] removed
+        # (or added if read=False). Requires the gmail.modify OAuth scope.
+        return None
+
+    async def archive_remote(self, provider_msg_id: str) -> None:
+        # TODO v0.1: users.messages.modify, removeLabelIds=["INBOX"].
+        return None
+
+    async def delete_remote(self, provider_msg_id: str) -> None:
+        # TODO v0.1: users.messages.trash; permanent delete only on explicit
+        # double-confirm.
+        return None

@@ -53,3 +53,15 @@ class ImapSource:
 
     async def close(self) -> None:
         return None
+
+    async def mark_read(self, provider_msg_id: str, *, read: bool = True) -> None:
+        # TODO v0.1: STORE UID +FLAGS \Seen / -FLAGS \Seen
+        return None
+
+    async def archive_remote(self, provider_msg_id: str) -> None:
+        # TODO v0.1: COPY UID -> [Gmail]/All Mail, then STORE +FLAGS \Deleted, EXPUNGE
+        return None
+
+    async def delete_remote(self, provider_msg_id: str) -> None:
+        # TODO v0.1: STORE UID +FLAGS \Deleted, EXPUNGE
+        return None
