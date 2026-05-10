@@ -24,32 +24,6 @@ interface RowFlags {
   reply: string | null;
 }
 
-const BODIES: Record<number, string> = {
-  1:
-    "Hi Dmytro,\n\n" +
-    "The security team flagged two open questions on the webhook signing flow we discussed last Thursday. Could you put together a one-pager addressing both points by Tuesday EOD? The board review is Wednesday morning and we need this signed off before then.\n\nThanks,\nAnna",
-  2:
-    "@sven-rasmussen requested your review on this pull request.\n\n" +
-    "PR #1842: Add retry logic to token refresh\n" +
-    "14 files changed, +312 -47\n\n" +
-    "View on GitHub: https://github.com/anthropics/claude-code/pull/1842",
-  3:
-    "Привіт, Дмитро!\n\nБачив твій PolyPalace на GitHub. Можемо коротко на 20 хвилин у п'ятницю?\n\nДякую,\nОлександр",
-  4: "Anthropic has sent you a receipt for $24.18 USD on May 9, 2026.",
-  5:
-    "Привет!\n\nПодборка статей за прошедшую неделю:\n\n1. Anthropic запускает MCP 2.0 со streaming.\n2. OpenRouter поднимает раунд $50M.\n3. Cursor добавляет inline tool calls.",
-  6:
-    "Top 10 stories from Hacker News for Saturday May 9:\n\n1. Show HN: I built an email AI agent in a weekend (847 points)\n2. The hidden costs of LLM APIs (612 points)",
-  7:
-    "Hej Dmytro,\n\nDin årsopgørelse for indkomståret 2025 er nu tilgængelig i TastSelv. Log ind på skat.dk for at se opgørelsen.\n\nMed venlig hilsen,\nSkattestyrelsen",
-  8:
-    "Your Notion workspace activity for the past week:\n\n- 14 pages updated\n- 3 new comments on \"Q2 product roadmap\"",
-  9:
-    "Issue: MAIL-12\nTitle: Add Russian draft generation\nStatus: Todo\nAssignee: dmytro",
-  10:
-    "Hej Dmytro!\n\nSpar 30% hos H&M denne uge når du betaler med Klarna.",
-};
-
 const NEWSLETTERS: Classification[] = ["newsletter", "promotion"];
 
 function buildFlagsFor(emails: EmailListItem[]): Record<number, RowFlags> {
@@ -473,7 +447,16 @@ export default function HomePage() {
               <div className="flex-1 min-w-0 bg-surface">
                 <ThreadViewer
                   email={selected}
-                  body={BODIES[selected.id] ?? selected.snippet ?? ""}
+                  body={
+                    (selectedDetail && selectedDetail.id === selected.id
+                      ? selectedDetail.body_text
+                      : null) ?? selected.snippet ?? ""
+                  }
+                  bodyHtml={
+                    selectedDetail && selectedDetail.id === selected.id
+                      ? selectedDetail.body_html
+                      : null
+                  }
                   userReply={flags[selected.id]?.reply ?? null}
                   onMarkRepliedSent={(replyBody) => markSent(selected.id, replyBody)}
                 />
@@ -492,7 +475,7 @@ export default function HomePage() {
               body={
                 (selectedDetail && selectedDetail.id === selected.id
                   ? selectedDetail.body_text
-                  : null) ?? BODIES[selected.id] ?? selected.snippet ?? ""
+                  : null) ?? selected.snippet ?? ""
               }
               bodyHtml={
                 selectedDetail && selectedDetail.id === selected.id
