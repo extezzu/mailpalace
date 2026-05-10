@@ -253,16 +253,21 @@ Open a **new terminal**, then:
 
 ```powershell
 cd mailpalace/frontend
-npm install
-npm run build
-npm start
+npm ci                  # reproducible install from package-lock.json
+npm run dev             # ⚡ fast dev server with hot reload
 ```
 
-After ~30 seconds you should see:
+After ~10 seconds you should see:
 
 ```
-✓ Ready on http://localhost:3000
+▲ Next.js 16.x.x
+- Local:        http://localhost:3000
+✓ Ready in 4.2s
 ```
+
+> 🚀 **Want a production build instead?** Run `npm run build && npm start` after `npm ci`. Slower first start, smaller / faster runtime.
+
+> ⚠️  **`npm install` vs `npm ci`?** `ci` reads the committed `package-lock.json` and installs exactly those versions; `install` may resolve to newer patch releases. For a fresh checkout always prefer `ci` — it's deterministic and what AI assistants should default to.
 
 ---
 
@@ -435,7 +440,7 @@ curl http://127.0.0.1:11434/api/tags   # Ollama running
 git clone https://github.com/extezzu/mailpalace
 cd mailpalace
 ( cd backend && pip install -e ".[dev]" )
-( cd frontend && npm install && npm run build )
+( cd frontend && npm ci )
 
 # 3. Verify the OAuth credential file is in place
 test -f ~/.mailpalace/google_credentials.json    # OR  $HOME\.mailpalace\google_credentials.json on Windows
@@ -443,7 +448,7 @@ test -f ~/.mailpalace/google_credentials.json    # OR  $HOME\.mailpalace\google_
 
 # 4. Boot
 ( cd backend && mailpalace serve & )
-( cd frontend && npm start & )
+( cd frontend && npm run dev & )
 
 # 5. Health check
 curl -sf http://127.0.0.1:7330/api/version       # JSON with process_token
