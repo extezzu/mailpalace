@@ -83,15 +83,22 @@ async def ingest_account(account_id: int) -> tuple[int, int]:
     finally:
         await source.close()
 
-    # Triage stays bounded so the first sync's hundreds of emails do not
-    # block the inbox view for minutes. We triage at most the 50 newest
-    # rows in the current ingest (where the user actually looks); the
-    # background poller revisits older rows in batches on subsequent
-    # ticks via list_pending_triage.
+    # Triage every newly-ingested row before returning. The earlier
+    # split (priority gather + backlog as create_task) silently lost
+    # the backlog whenever ingest_account ran inside a threading.Thread
+    # via asyncio.run, because asyncio.run tore down the event loop
+    # the instant ingest_account returned. Now that the OAuth worker
+    # owns the thread and only cares about /api/* responsiveness on
+    # the main loop, we can safely block here until every triage
+    # finishes.
+    #
+    # The Gmail-label fast path in triage.py already short-circuits
+    # SPAM, TRASH, and CATEGORY_* messages without an LLM call, so
+    # the remaining LLM workload is roughly the personal-inbox count
+    # (50-150 on a typical mailbox), not the full ingest size.
     import asyncio as _asyncio
 
     semaphore = _asyncio.Semaphore(4)
-    priority_ids = new_email_ids[:50]
 
     async def _bounded(eid: int) -> None:
         async with semaphore:
@@ -100,17 +107,8 @@ async def ingest_account(account_id: int) -> tuple[int, int]:
             except Exception:
                 logger.exception("triage failed for email %d", eid)
 
-    await _asyncio.gather(*(_bounded(eid) for eid in priority_ids))
-
-    if len(new_email_ids) > 50:
-        # Drop the rest into a fire-and-forget task so ingest_account
-        # returns quickly and the poll loop can keep moving.
-        backlog = new_email_ids[50:]
-
-        async def _drain_backlog() -> None:
-            await _asyncio.gather(*(_bounded(eid) for eid in backlog))
-
-        _asyncio.create_task(_drain_backlog())
+    if new_email_ids:
+        await _asyncio.gather(*(_bounded(eid) for eid in new_email_ids))
 
     return new_count, error_count
 
