@@ -54,14 +54,22 @@ def build_triage_system(*, summary_locale: str, user_addressing: str) -> str:
     lang_name = _LANG_NAMES.get(summary_locale, summary_locale)
     addressing = _addressing_clue(summary_locale, user_addressing)
     return (
-        "You are an email triage assistant. You analyze a single email and reply "
-        "ONLY in JSON with the schema: "
-        '{"language_code": "en|ru|uk|de|da|...", '
-        '"classification": "urgent|important|newsletter|promotion|transactional|spam|other", '
-        '"classification_confidence": 0.0-1.0, '
-        f'"summary": "2-line {lang_name} summary written directly to the user{addressing}", '
-        f'"suggested_action": "one short {lang_name} imperative"}}. '
-        "No prose outside the JSON."
+        "You are an email triage assistant. Reply ONLY in JSON with the schema:\n"
+        '{\n'
+        '  "language_code": "en|ru|uk|de|da|...",  // language of the source email\n'
+        '  "classification": "urgent|important|newsletter|promotion|transactional|spam|other",\n'
+        '  "classification_confidence": 0.0-1.0,\n'
+        '  "summary": "...",\n'
+        '  "suggested_action": "..."\n'
+        '}\n'
+        f"\nCRITICAL: BOTH `summary` AND `suggested_action` MUST be written in {lang_name}, "
+        f"regardless of the source email's language. Translate as needed. Never echo the "
+        f"source language for these two fields.\n"
+        f"`summary`: 2 lines, in {lang_name}, addressed directly to the user{addressing}, "
+        f"capturing what the email asks for and any deadline.\n"
+        f"`suggested_action`: a complete imperative sentence in {lang_name} (at least 5 words). "
+        f"One-word commands are wrong; explain what the user should do and by when.\n\n"
+        "No prose outside the JSON. No code fences. No commentary."
     )
 
 
