@@ -198,14 +198,27 @@ export default function HomePage() {
       if (activeFilter === "newsletter") return NEWSLETTERS.includes(cls);
       return cls === activeFilter;
     });
-    // Inbox and AI buckets are ranked by importance; Sent and Trash keep
-    // chronological order so the user can see what they did last.
-    // Standard email-client behaviour: newest first, regardless of folder.
-    // Classification still drives the AI bucket counts and the digest view;
-    // it no longer reorders the list.
-    return list.sort(
-      (a, b) => new Date(b.received_at).getTime() - new Date(a.received_at).getTime(),
-    );
+    // Sort policy:
+    //   - Inbox view: AI classification first (urgent → important →
+    //     everything else), date-desc inside each group. Inside one
+    //     classification a fresher email outranks an older one.
+    //   - AI buckets (urgent / important / newsletter / etc.) and
+    //     Sent / Trash: classification is constant or irrelevant, so
+    //     just date-desc.
+    const isInboxView = activeFilter === "inbox";
+    const importanceRank = (cls: Classification | undefined): number => {
+      if (cls === "urgent") return 0;
+      if (cls === "important") return 1;
+      return 2;
+    };
+    return list.sort((a, b) => {
+      if (isInboxView) {
+        const ra = importanceRank(a.ai?.classification as Classification | undefined);
+        const rb = importanceRank(b.ai?.classification as Classification | undefined);
+        if (ra !== rb) return ra - rb;
+      }
+      return new Date(b.received_at).getTime() - new Date(a.received_at).getTime();
+    });
   }, [liveEmails, flags, activeFilter]);
 
   const selected = filtered.find((e) => e.id === selectedId) ?? filtered[0] ?? null;
@@ -457,8 +470,13 @@ export default function HomePage() {
             />
           </section>
         ) : (
-          <section className="flex h-full w-[380px] shrink-0 flex-col border-r border-border bg-surface">
-            <div className="flex-1 overflow-y-auto scrollbar-thin">
+          // `min-h-0` is the key to this column scrolling: in a nested
+          // flex column the child only respects overflow if the parent
+          // does not bottom-out at content height. Without it the list
+          // grows past the viewport and the outer overflow-hidden clips
+          // everything past the first ~10-20 rows.
+          <section className="flex h-full min-h-0 w-[380px] shrink-0 flex-col border-r border-border bg-surface">
+            <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin">
               {filtered.length === 0 ? (
                 <EmptyState
                   title="Nothing here"
@@ -471,17 +489,22 @@ export default function HomePage() {
                   }
                 />
               ) : (
-                filtered.map((email) => (
-                  <EmailRow
-                    key={email.id}
-                    email={email}
-                    isSelected={selected?.id === email.id}
-                    onSelect={() => setSelectedId(email.id)}
-                    onToggleRead={() => toggleRead(email.id)}
-                    onSnooze={() => snooze(email.id)}
-                    onDelete={() => deleteEmail(email.id)}
-                  />
-                ))
+                <>
+                  {filtered.map((email) => (
+                    <EmailRow
+                      key={email.id}
+                      email={email}
+                      isSelected={selected?.id === email.id}
+                      onSelect={() => setSelectedId(email.id)}
+                      onToggleRead={() => toggleRead(email.id)}
+                      onSnooze={() => snooze(email.id)}
+                      onDelete={() => deleteEmail(email.id)}
+                    />
+                  ))}
+                  <div className="px-4 py-3 text-center font-mono text-caption text-text-tertiary">
+                    {filtered.length} message{filtered.length === 1 ? "" : "s"} in this view
+                  </div>
+                </>
               )}
             </div>
           </section>
