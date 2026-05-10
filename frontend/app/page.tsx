@@ -205,13 +205,20 @@ export default function HomePage() {
 
   const selected = filtered.find((e) => e.id === selectedId) ?? filtered[0] ?? null;
 
-  // Mark the currently-selected row as read (item #17). Runs once per
-  // selection change, no DB write yet -- v0.1 syncs to the backend.
+  // Mark the currently-selected row as read locally AND push the change
+  // to Gmail via PATCH /api/email/{id}. Best-effort propagation.
   useEffect(() => {
     if (!selected) return;
     setFlags((prev) => {
       if (prev[selected.id]?.read) return prev;
       return { ...prev, [selected.id]: { ...prev[selected.id], read: true } };
+    });
+    fetch(api(`/api/email/${selected.id}`), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ is_unread: false }),
+    }).catch(() => {
+      /* best effort; local read flag stays */
     });
   }, [selected?.id]);
 
@@ -251,11 +258,24 @@ export default function HomePage() {
   const triagedCount = liveEmails.filter((e) => e.ai?.classification).length;
   const provider = liveEmails.find((e) => e.ai?.provider)?.ai?.provider ?? "ollama:llama3.1:8b";
 
-  function toggleRead(emailId: number) {
-    setFlags((prev) => ({
-      ...prev,
-      [emailId]: { ...prev[emailId], read: !prev[emailId].read },
-    }));
+  async function toggleRead(emailId: number) {
+    let nextRead = true;
+    setFlags((prev) => {
+      nextRead = !prev[emailId].read;
+      return {
+        ...prev,
+        [emailId]: { ...prev[emailId], read: nextRead },
+      };
+    });
+    try {
+      await fetch(api(`/api/email/${emailId}`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_unread: !nextRead }),
+      });
+    } catch {
+      /* local state already updated; provider sync will retry on next action */
+    }
   }
 
   function snooze(emailId: number) {
@@ -265,11 +285,16 @@ export default function HomePage() {
     }));
   }
 
-  function deleteEmail(emailId: number) {
+  async function deleteEmail(emailId: number) {
     setFlags((prev) => ({
       ...prev,
       [emailId]: { ...prev[emailId], deleted: true },
     }));
+    try {
+      await fetch(api(`/api/email/${emailId}/delete`), { method: "POST" });
+    } catch {
+      /* local state already moved the row to trash */
+    }
   }
 
   function markSent(emailId: number, replyBody: string) {

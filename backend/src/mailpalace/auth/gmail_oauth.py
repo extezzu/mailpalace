@@ -24,9 +24,11 @@ from mailpalace.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# Read-only is enough for v0.1 surfacing. v0.2 adds gmail.modify so the
-# bidirectional sync (mark-read, archive, trash) propagates upstream.
-SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+# `gmail.modify` covers read AND write actions: mark read/unread, add/remove
+# labels (archive, move to spam, untrash), trash, and send drafts via the
+# bidirectional sync layer. Strictly broader than `readonly`, so the read
+# pipeline keeps working unchanged after the consent upgrade.
+SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 
 
 def _load_client_config_path() -> Path | None:

@@ -258,14 +258,41 @@ class GmailSource:
         self._service = None
 
     async def mark_read(self, provider_msg_id: str, *, read: bool = True) -> None:
-        # TODO v0.2: requires gmail.modify scope. With readonly we can't
-        # mutate the UNREAD label, so this is a no-op until we re-consent.
-        return None
+        if self._service is None:
+            await self.connect()
+        assert self._service is not None
+        body = (
+            {"removeLabelIds": ["UNREAD"]}
+            if read
+            else {"addLabelIds": ["UNREAD"]}
+        )
+        try:
+            self._service.users().messages().modify(
+                userId="me", id=provider_msg_id, body=body
+            ).execute()
+        except HttpError as exc:
+            logger.warning("mark_read failed for %s: %s", provider_msg_id, exc)
 
     async def archive_remote(self, provider_msg_id: str) -> None:
-        # TODO v0.2: same as above; needs gmail.modify.
-        return None
+        if self._service is None:
+            await self.connect()
+        assert self._service is not None
+        try:
+            self._service.users().messages().modify(
+                userId="me",
+                id=provider_msg_id,
+                body={"removeLabelIds": ["INBOX"]},
+            ).execute()
+        except HttpError as exc:
+            logger.warning("archive_remote failed for %s: %s", provider_msg_id, exc)
 
     async def delete_remote(self, provider_msg_id: str) -> None:
-        # TODO v0.2: users.messages.trash; needs gmail.modify.
-        return None
+        if self._service is None:
+            await self.connect()
+        assert self._service is not None
+        try:
+            self._service.users().messages().trash(
+                userId="me", id=provider_msg_id
+            ).execute()
+        except HttpError as exc:
+            logger.warning("delete_remote failed for %s: %s", provider_msg_id, exc)

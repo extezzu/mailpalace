@@ -43,33 +43,92 @@ class BulkRequest(BaseModel):
     email_ids: list[int]
 
 
+async def _propagate_to_provider(
+    email_id: int,
+    action: str,
+    *,
+    read: bool | None = None,
+) -> None:
+    """Push a local action (read/delete/archive) up to the upstream mailbox.
+
+    Best-effort: any provider failure logs and returns silently so the
+    user's local state still moves regardless of network blips.
+    """
+    from mailpalace.db.engine import session_scope as _scope
+    from mailpalace.db.schema import Account, Email
+    from mailpalace.mail.gmail import GmailSource
+
+    with _scope() as session:
+        email_row = session.get(Email, email_id)
+        if email_row is None:
+            return
+        account = session.get(Account, email_row.account_id)
+        if account is None:
+            return
+        provider_msg_id = email_row.provider_msg_id
+        kind = account.kind
+        email_address = account.email_address
+        account_id = account.id
+
+    if kind != "gmail":
+        return
+
+    source = GmailSource(account_id=account_id, email_address=email_address)
+    try:
+        await source.connect()
+        if action == "read":
+            await source.mark_read(provider_msg_id, read=read if read is not None else True)
+        elif action == "trash":
+            await source.delete_remote(provider_msg_id)
+        elif action == "archive":
+            await source.archive_remote(provider_msg_id)
+    except Exception:
+        logger.exception("provider propagate failed for action=%s id=%d", action, email_id)
+    finally:
+        await source.close()
+
+
 @router.post("/email/{email_id}/mark_replied", summary="Move email to Sent")
-def mark_replied(email_id: int, session: Session = SessionDep) -> dict:
+async def mark_replied(
+    email_id: int, background: BackgroundTasks, session: Session = SessionDep
+) -> dict:
     """Stamp an email as replied. Inbox hides it; Sent reads it."""
     row = repo.mark_email_replied(session, email_id)
     session.commit()
     if row is None:
         raise HTTPException(status_code=404, detail="Email not found")
+    background.add_task(_propagate_to_provider, email_id, "read", read=True)
     return {"id": row.id, "replied_at": row.replied_at.isoformat() if row.replied_at else None}
 
 
 @router.post("/email/{email_id}/delete", summary="Move email to Trash")
-def delete_email(email_id: int, session: Session = SessionDep) -> dict:
+async def delete_email(
+    email_id: int, background: BackgroundTasks, session: Session = SessionDep
+) -> dict:
     row = repo.mark_email_deleted(session, email_id)
     session.commit()
     if row is None:
         raise HTTPException(status_code=404, detail="Email not found")
+    background.add_task(_propagate_to_provider, email_id, "trash")
     return {"id": row.id, "deleted_at": row.deleted_at.isoformat() if row.deleted_at else None}
 
 
 @router.patch("/email/{email_id}", summary="Update read state")
-def patch_email(email_id: int, body: EmailUpdate, session: Session = SessionDep) -> dict:
+async def patch_email(
+    email_id: int,
+    body: EmailUpdate,
+    background: BackgroundTasks,
+    session: Session = SessionDep,
+) -> dict:
     if body.is_unread is None:
         raise HTTPException(status_code=400, detail="No fields to update")
     row = repo.mark_email_unread(session, email_id, body.is_unread)
     session.commit()
     if row is None:
         raise HTTPException(status_code=404, detail="Email not found")
+    background.add_task(
+        _propagate_to_provider, email_id, "read", read=not body.is_unread
+    )
     return {"id": row.id, "is_unread": row.is_unread}
 
 
@@ -84,9 +143,13 @@ def snooze_email(email_id: int, body: SnoozeRequest, session: Session = SessionD
 
 
 @router.post("/email/bulk_delete", summary="Delete several emails at once")
-def bulk_delete(body: BulkRequest, session: Session = SessionDep) -> dict:
+async def bulk_delete(
+    body: BulkRequest, background: BackgroundTasks, session: Session = SessionDep
+) -> dict:
     affected = repo.bulk_mark_deleted(session, body.email_ids)
     session.commit()
+    for email_id in body.email_ids:
+        background.add_task(_propagate_to_provider, email_id, "trash")
     return {"affected": affected}
 
 
