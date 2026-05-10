@@ -123,3 +123,49 @@ async def sync_account(account_id: int, session: Session = SessionDep) -> dict:
         raise HTTPException(status_code=404, detail="Account not found")
     new_count, error_count = await ingest_account(account_id)
     return {"new": new_count, "errors": error_count}
+
+
+class ImapConnectRequest(BaseModel):
+    email_address: str
+    host: str
+    port: int = 993
+    username: str
+    password: str
+    label: str | None = None
+
+
+@router.post(
+    "/accounts/imap/connect",
+    response_model=AccountSummary,
+    summary="Connect an IMAP mailbox",
+    description=(
+        "Saves IMAP credentials. The password lands in the OS keyring "
+        "(Windows Credential Manager / macOS Keychain / libsecret). The "
+        "username and host live alongside the account row. Suitable for "
+        "Outlook, iCloud, Fastmail, mailbox.org, or any local Tutanota / "
+        "Proton bridge. Real fetch loop ships in the next iteration."
+    ),
+)
+def connect_imap(body: ImapConnectRequest, session: Session = SessionDep) -> AccountSummary:
+    from mailpalace.auth import secrets as secrets_store
+
+    secrets_store.store("imap", body.email_address, body.password)
+    existing = session.scalar(select(Account).where(Account.email_address == body.email_address))
+    if existing is not None:
+        existing.kind = "imap"
+        existing.is_active = True
+        existing.last_error = None
+        existing.config_json = {"host": body.host, "port": body.port, "username": body.username}
+        session.commit()
+        return _to_summary(existing)
+    row = Account(
+        kind="imap",
+        label=body.label or body.email_address,
+        email_address=body.email_address,
+        config_json={"host": body.host, "port": body.port, "username": body.username},
+        is_active=True,
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return _to_summary(row)
