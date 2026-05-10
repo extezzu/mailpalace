@@ -106,6 +106,7 @@ export default function HomePage() {
   const [accountEmail, setAccountEmail] = useState("demo@mailpalace.local");
   const [summaryLocale, setSummaryLocale] = useState<string>("en");
   const [retriaging, setRetriaging] = useState(false);
+  const [retriageProgress, setRetriageProgress] = useState<{ current: number; total: number } | null>(null);
 
   // On mount: pull settings + the live inbox. The mock data only acts as a
   // fallback for when the backend is unreachable (e.g. during a static
@@ -280,26 +281,46 @@ export default function HomePage() {
   async function changeSummaryLocale(next: string) {
     setSummaryLocale(next);
     setRetriaging(true);
+    setRetriageProgress({ current: 0, total: 0 });
     try {
       await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ summary_locale: next }),
       });
-      // Re-triage the whole mailbox so existing summaries pick up the new
-      // language. The endpoint blocks until every email is triaged; for the
-      // 10-row demo this is fine, the v0.1 background-worker pipeline will
-      // stream incremental updates over SSE instead.
+      // Kick off the retriage in the background; the endpoint returns
+      // immediately so the UI never blocks for the full LLM cycle.
       await fetch("/api/retriage_all", { method: "POST" });
-      // Refetch so the new summaries actually land in the UI.
-      const fresh = await fetchInbox();
-      if (fresh.length > 0) {
-        setEmails(fresh);
+      // Poll the progress endpoint until the worker is done. 1.5s cadence
+      // is fast enough to feel responsive but doesn't drown the backend.
+      const POLL_MS = 1500;
+      const TIMEOUT_MS = 10 * 60 * 1000;
+      const startedAt = Date.now();
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+        try {
+          const resp = await fetch("/api/retriage_progress");
+          if (!resp.ok) break;
+          const status: {
+            processing: boolean;
+            current: number;
+            total: number;
+          } = await resp.json();
+          setRetriageProgress({ current: status.current, total: status.total });
+          if (!status.processing) break;
+        } catch {
+          break;
+        }
+        if (Date.now() - startedAt > TIMEOUT_MS) break;
       }
+      const fresh = await fetchInbox();
+      if (fresh.length > 0) setEmails(fresh);
     } catch {
       /* leave the previous summaries in place */
     } finally {
       setRetriaging(false);
+      setRetriageProgress(null);
     }
   }
 
@@ -313,6 +334,7 @@ export default function HomePage() {
         totalCount={liveEmails.length}
         summaryLocale={summaryLocale}
         retriaging={retriaging}
+        retriageProgress={retriageProgress}
         onSummaryLocaleChange={changeSummaryLocale}
       />
       <div className="flex flex-1 min-h-0">

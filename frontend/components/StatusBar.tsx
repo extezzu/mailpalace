@@ -10,6 +10,7 @@ interface Props {
   totalCount: number;
   summaryLocale: string;
   retriaging?: boolean;
+  retriageProgress?: { current: number; total: number } | null;
   onSummaryLocaleChange: (locale: string) => void;
 }
 
@@ -54,6 +55,7 @@ export function StatusBar({
   totalCount,
   summaryLocale,
   retriaging,
+  retriageProgress,
   onSummaryLocaleChange,
 }: Props) {
   const [llmHealthy, setLlmHealthy] = useState<boolean | null>(null);
@@ -121,7 +123,11 @@ export function StatusBar({
           ))}
         </select>
         {retriaging && (
-          <span className="text-text-tertiary">retriaging…</span>
+          <span className="text-text-tertiary">
+            {retriageProgress && retriageProgress.total > 0
+              ? `retriaging ${retriageProgress.current}/${retriageProgress.total}…`
+              : "retriaging…"}
+          </span>
         )}
       </span>
 

@@ -2,16 +2,33 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from mailpalace.db import repo
 from mailpalace.web.deps import SessionDep
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+# Tracks the latest retriage_all job. v0 keeps it in process memory; v0.1
+# moves it into Redis when the scheduler ships.
+_RETRIAGE_PROGRESS: dict[str, int | bool | str | None] = {
+    "processing": False,
+    "current": 0,
+    "total": 0,
+    "succeeded": 0,
+    "failed": 0,
+    "started_at": None,
+    "finished_at": None,
+}
+_RETRIAGE_LOCK = asyncio.Lock()
 
 
 class EmailUpdate(BaseModel):
@@ -73,25 +90,81 @@ def bulk_delete(body: BulkRequest, session: Session = SessionDep) -> dict:
     return {"affected": affected}
 
 
+async def _retriage_worker(email_ids: list[int]) -> None:
+    """Run triage for each email and update the shared progress dict.
+
+    The lock guards against two concurrent retriage cycles racing the
+    progress counter; the second caller backs off and refuses to start.
+    """
+    from mailpalace.pipeline.triage import triage_email
+
+    if _RETRIAGE_LOCK.locked():
+        logger.info("retriage already running; skipping new request")
+        return
+
+    async with _RETRIAGE_LOCK:
+        _RETRIAGE_PROGRESS.update(
+            processing=True,
+            current=0,
+            total=len(email_ids),
+            succeeded=0,
+            failed=0,
+            started_at=datetime.now(tz=timezone.utc).isoformat(),
+            finished_at=None,
+        )
+        for email_id in email_ids:
+            try:
+                ok = await triage_email(int(email_id))
+            except Exception:
+                logger.exception("retriage failed for email %d", email_id)
+                ok = False
+            _RETRIAGE_PROGRESS["current"] = int(_RETRIAGE_PROGRESS["current"]) + 1  # type: ignore[arg-type]
+            if ok:
+                _RETRIAGE_PROGRESS["succeeded"] = int(_RETRIAGE_PROGRESS["succeeded"]) + 1  # type: ignore[arg-type]
+            else:
+                _RETRIAGE_PROGRESS["failed"] = int(_RETRIAGE_PROGRESS["failed"]) + 1  # type: ignore[arg-type]
+        _RETRIAGE_PROGRESS["processing"] = False
+        _RETRIAGE_PROGRESS["finished_at"] = datetime.now(tz=timezone.utc).isoformat()
+
+
 @router.post(
     "/retriage_all",
-    summary="Re-triage every active email through the current LLM provider",
+    status_code=202,
+    summary="Kick off a background re-triage of every active email",
     description=(
-        "Walks every email currently in the inbox and re-runs the triage "
-        "pipeline against it. Used after the user changes summary_locale "
-        "so existing rows pick up the new language. Returns the number of "
-        "rows that succeeded."
+        "Returns immediately. Use GET /api/retriage_progress to poll. "
+        "Used after the user changes summary_locale so existing rows pick "
+        "up the new language without freezing the UI on a long LLM cycle."
     ),
 )
-async def retriage_all(session: Session = SessionDep) -> dict:
+async def retriage_all(
+    background: BackgroundTasks, session: Session = SessionDep
+) -> dict:
     from sqlalchemy import select as sa_select
 
     from mailpalace.db.schema import Email
-    from mailpalace.pipeline.triage import triage_email
+
+    if _RETRIAGE_PROGRESS["processing"]:
+        return {
+            "started": False,
+            "reason": "another retriage is already running",
+            **_RETRIAGE_PROGRESS,
+        }
 
     rows = session.scalars(sa_select(Email.id)).all()
-    success = 0
-    for email_id in rows:
-        if await triage_email(int(email_id)):
-            success += 1
-    return {"requested": len(rows), "succeeded": success}
+    email_ids = [int(row) for row in rows]
+    background.add_task(_retriage_worker, email_ids)
+    return {"started": True, "total": len(email_ids)}
+
+
+@router.get(
+    "/retriage_progress",
+    summary="Read the current retriage_all progress",
+    description=(
+        "Polled by the dashboard while the language switcher is rotating "
+        "every email through the LLM. Reports current/total counts and "
+        "succeeded/failed breakdown."
+    ),
+)
+def retriage_progress() -> dict:
+    return dict(_RETRIAGE_PROGRESS)
