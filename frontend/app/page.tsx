@@ -70,30 +70,6 @@ function rowIsActive(flags: RowFlags | undefined): boolean {
   return Boolean(flags && !flags.deleted && !flags.sent && !flags.snoozed);
 }
 
-// Importance ladder for the inbox sort. Urgent stays on top, transactional
-// (receipts) outranks promotions, AI confidence breaks ties within the same
-// classification. v0.1 will replace this with a backend-side score that also
-// considers sender history and read patterns.
-const RANK: Record<string, number> = {
-  urgent: 100,
-  important: 80,
-  transactional: 60,
-  newsletter: 40,
-  promotion: 20,
-  spam: 5,
-  other: 10,
-};
-
-function importanceRank(email: EmailListItem): number {
-  // Be tolerant of casing / leading-trailing whitespace; older rows that
-  // were classified before the prompt enforced lowercase still need to
-  // sort sensibly.
-  const raw = email.ai?.classification;
-  const cls = typeof raw === "string" ? raw.trim().toLowerCase() : "other";
-  const base = RANK[cls] ?? 10;
-  const conf = email.ai?.confidence ?? 0;
-  return base + conf;
-}
 
 async function fetchInbox(): Promise<EmailListItem[]> {
   const resp = await fetch(api("/api/inbox?folder=all&limit=200"));
@@ -230,16 +206,12 @@ export default function HomePage() {
     });
     // Inbox and AI buckets are ranked by importance; Sent and Trash keep
     // chronological order so the user can see what they did last.
-    if (activeFilter === "trash" || activeFilter === "sent") {
-      return list.sort(
-        (a, b) => new Date(b.received_at).getTime() - new Date(a.received_at).getTime(),
-      );
-    }
-    return list.sort((a, b) => {
-      const rankDelta = importanceRank(b) - importanceRank(a);
-      if (rankDelta !== 0) return rankDelta;
-      return new Date(b.received_at).getTime() - new Date(a.received_at).getTime();
-    });
+    // Standard email-client behaviour: newest first, regardless of folder.
+    // Classification still drives the AI bucket counts and the digest view;
+    // it no longer reorders the list.
+    return list.sort(
+      (a, b) => new Date(b.received_at).getTime() - new Date(a.received_at).getTime(),
+    );
   }, [liveEmails, flags, activeFilter]);
 
   const selected = filtered.find((e) => e.id === selectedId) ?? filtered[0] ?? null;

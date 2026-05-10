@@ -42,11 +42,24 @@ def _parse_addresses(raw: str | None) -> list[dict]:
 
 
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
+_HTML_BLOCK_NOISE_RE = re.compile(
+    r"<(script|style|head)\b[^>]*>.*?</\1>",
+    re.IGNORECASE | re.DOTALL,
+)
+_HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 
 
 def _strip_html(html: str) -> str:
-    text = _HTML_TAG_RE.sub(" ", html)
-    return " ".join(text.split())
+    """Plain-text fallback that drops markup, comments, scripts, and styles.
+
+    Plain `re.sub("<[^>]+>")` keeps the contents of `<style>` blocks and
+    Outlook-flavoured CSS comments, which then surface in the snippet and
+    in the triage prompt. Strip those wrappers first, then the tags.
+    """
+    cleaned = _HTML_COMMENT_RE.sub(" ", html)
+    cleaned = _HTML_BLOCK_NOISE_RE.sub(" ", cleaned)
+    cleaned = _HTML_TAG_RE.sub(" ", cleaned)
+    return " ".join(cleaned.split())
 
 
 def _walk_body(msg) -> tuple[str, str | None]:
@@ -184,16 +197,17 @@ class GmailSource:
                 page = (
                     self._service.users()
                     .messages()
-                    .list(userId="me", q="newer_than:7d", maxResults=50, pageToken=page_token)
+                    .list(userId="me", q="newer_than:30d", maxResults=100, pageToken=page_token)
                     .execute()
                 )
                 for entry in page.get("messages", []):
                     message_ids.append((entry["id"], entry["threadId"]))
                 seen += len(page.get("messages", []))
                 page_token = page.get("nextPageToken")
-                # Cap initial backfill so the first sync finishes in minutes,
-                # not hours. v0.2 backfills the rest in a low-priority queue.
-                if page_token is None or seen >= 50:
+                # Cap initial backfill at 200 messages. Remaining history
+                # ships incrementally via the historyId-based path the
+                # next time the scheduler ticks.
+                if page_token is None or seen >= 200:
                     break
 
         # De-dupe in case history surfaced the same message twice.

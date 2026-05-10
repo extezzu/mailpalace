@@ -144,13 +144,14 @@ export function ThreadViewer({ email, body, bodyHtml, userReply, onMarkRepliedSe
           {bodyHtml ? (
             // Sandboxed iframe: arbitrary email HTML cannot run scripts or
             // touch the parent page. srcDoc is a string Next.js renders
-            // straight into the attribute.
+            // straight into the attribute. Height is intentionally generous
+            // because cross-origin iframes can't auto-resize to content.
             <iframe
               title="Email body"
               srcDoc={bodyHtml}
               sandbox=""
               className="block w-full rounded-md border border-border bg-surface"
-              style={{ minHeight: "320px", height: "60vh" }}
+              style={{ minHeight: "70vh", height: "calc(100vh - 240px)" }}
             />
           ) : (
             <div className="prose prose-sm max-w-none whitespace-pre-wrap font-sans text-body text-text-primary">
