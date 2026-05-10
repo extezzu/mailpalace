@@ -195,29 +195,30 @@ class GmailSource:
                     raise
 
         if not sync_state:
-            page_token = None
-            seen = 0
-            while True:
-                page = (
-                    self._service.users()
-                    .messages()
-                    .list(
-                        userId="me",
-                        q="in:anywhere newer_than:60d",
-                        maxResults=100,
-                        pageToken=page_token,
+            # Gmail's `in:anywhere` covers Spam/Trash and the inbox tabs but
+            # not Sent, and `q="newer_than:..."` defaults to inbox-only. Run
+            # two queries and merge so Sent shows up in the first ingest.
+            for q in ("in:anywhere newer_than:60d", "in:sent newer_than:60d"):
+                page_token = None
+                seen = 0
+                while True:
+                    page = (
+                        self._service.users()
+                        .messages()
+                        .list(
+                            userId="me",
+                            q=q,
+                            maxResults=100,
+                            pageToken=page_token,
+                        )
+                        .execute()
                     )
-                    .execute()
-                )
-                for entry in page.get("messages", []):
-                    message_ids.append((entry["id"], entry["threadId"]))
-                seen += len(page.get("messages", []))
-                page_token = page.get("nextPageToken")
-                # Cap initial backfill at 500 messages so the first ingest
-                # covers Inbox, Promotions, Spam, Sent, and Trash without
-                # pulling everything ever.
-                if page_token is None or seen >= 500:
-                    break
+                    for entry in page.get("messages", []):
+                        message_ids.append((entry["id"], entry["threadId"]))
+                    seen += len(page.get("messages", []))
+                    page_token = page.get("nextPageToken")
+                    if page_token is None or seen >= 500:
+                        break
 
         # De-dupe in case history surfaced the same message twice.
         seen_ids: set[str] = set()
