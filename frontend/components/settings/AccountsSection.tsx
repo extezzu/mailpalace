@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Plus, Server, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
-import { IMAP_PRESETS } from "@/lib/imap-presets";
+import { ImapConnectForm } from "@/components/email/ImapConnectForm";
 
 export interface ConnectedAccount {
   id: number;
@@ -125,7 +125,7 @@ export function AccountsSection({ accounts, onDisconnect, onRefresh }: Props) {
       )}
 
       {adding === "imap" && (
-        <ImapAddForm
+        <ImapConnectForm
           onCancel={() => setAdding("none")}
           onConnected={async () => {
             setAdding("none");
@@ -191,178 +191,4 @@ function phaseLabel(phase: string): string {
   if (phase === "exchanging") return "Saving credentials…";
   if (phase === "ingesting") return "Almost there…";
   return "Working…";
-}
-
-interface ImapFormState {
-  host: string;
-  port: string;
-  emailAddress: string;
-  username: string;
-  password: string;
-}
-
-const EMPTY_IMAP: ImapFormState = {
-  host: "",
-  port: "993",
-  emailAddress: "",
-  username: "",
-  password: "",
-};
-
-function ImapAddForm({
-  onCancel,
-  onConnected,
-}: {
-  onCancel: () => void;
-  onConnected: () => Promise<void>;
-}) {
-  const [form, setForm] = useState<ImapFormState>(EMPTY_IMAP);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  function applyPreset(name: string) {
-    const preset = IMAP_PRESETS.find((p) => p.name === name);
-    if (!preset) return;
-    setForm((prev) => ({ ...prev, host: preset.host, port: String(preset.port) }));
-  }
-
-  async function submit() {
-    if (!form.emailAddress || !form.host || !form.password) {
-      setError("Fill email, IMAP host, and password.");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      const resp = await fetch(api("/api/accounts/imap/connect"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email_address: form.emailAddress,
-          host: form.host,
-          port: Number(form.port) || 993,
-          username: form.username || form.emailAddress,
-          password: form.password,
-        }),
-      });
-      if (!resp.ok) {
-        // Surface backend's HTTPException detail (auth fail, host
-        // unreachable, etc.) so the user can fix the form rather
-        // than see a generic "HTTP 401".
-        const body = await resp.json().catch(() => ({}));
-        const detail = body?.detail ?? `HTTP ${resp.status}`;
-        throw new Error(detail);
-      }
-      await onConnected();
-    } catch (exc) {
-      setError(exc instanceof Error ? exc.message : String(exc));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="flex flex-col gap-2 rounded-md border border-border bg-surface-elevated p-3">
-      <select
-        onChange={(event) => applyPreset(event.target.value)}
-        defaultValue=""
-        className="rounded-md border border-border bg-surface px-3 py-2 text-body outline-none focus:border-accent"
-      >
-        <option value="">— pick a provider —</option>
-        {IMAP_PRESETS.map((preset) => (
-          <option key={preset.name} value={preset.name}>
-            {preset.name}
-          </option>
-        ))}
-      </select>
-      <input
-        type="email"
-        placeholder="Email address"
-        value={form.emailAddress}
-        onChange={(e) => setForm({ ...form, emailAddress: e.target.value })}
-        className="rounded-md border border-border bg-surface px-3 py-2 text-body outline-none focus:border-accent"
-      />
-      <div className="grid grid-cols-[1fr_120px] gap-2">
-        <input
-          placeholder="IMAP host"
-          value={form.host}
-          onChange={(e) => setForm({ ...form, host: e.target.value })}
-          className="rounded-md border border-border bg-surface px-3 py-2 text-body outline-none focus:border-accent"
-        />
-        <input
-          placeholder="Port"
-          value={form.port}
-          onChange={(e) => setForm({ ...form, port: e.target.value })}
-          inputMode="numeric"
-          className="rounded-md border border-border bg-surface px-3 py-2 text-body outline-none focus:border-accent"
-        />
-      </div>
-      <input
-        placeholder="Username (often your email)"
-        value={form.username}
-        onChange={(e) => setForm({ ...form, username: e.target.value })}
-        className="rounded-md border border-border bg-surface px-3 py-2 text-body outline-none focus:border-accent"
-      />
-      <input
-        type="password"
-        placeholder="Password (or app-specific password)"
-        value={form.password}
-        onChange={(e) => setForm({ ...form, password: e.target.value })}
-        className="rounded-md border border-border bg-surface px-3 py-2 text-body outline-none focus:border-accent"
-      />
-      <div className="flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded px-3 py-1.5 text-small text-text-secondary hover:bg-bg"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          onClick={submit}
-          disabled={busy}
-          className="rounded px-3 py-1.5 text-small font-medium text-surface hover:opacity-90 disabled:cursor-wait disabled:opacity-60"
-          style={{ backgroundColor: "rgb(var(--accent))" }}
-        >
-          {busy ? "Connecting…" : "Connect"}
-        </button>
-      </div>
-      {error && <ImapErrorHint error={error} host={form.host} />}
-    </div>
-  );
-}
-
-function ImapErrorHint({ error, host }: { error: string; host: string }) {
-  const lower = error.toLowerCase();
-  const isAppPasswordHint =
-    lower.includes("application-specific password") ||
-    lower.includes("app password") ||
-    lower.includes("application password");
-  const isGmail = host.includes("gmail.com") || isAppPasswordHint;
-
-  return (
-    <div
-      className="flex flex-col gap-2 rounded-md border px-3 py-2 text-small"
-      style={{ borderColor: "rgb(var(--urgent))", color: "rgb(var(--urgent))" }}
-    >
-      <span>{error}</span>
-      {isAppPasswordHint && isGmail && (
-        <span className="text-text-secondary">
-          Gmail no longer accepts your normal account password over IMAP. Create a
-          16-character{" "}
-          <a
-            href="https://myaccount.google.com/apppasswords"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline"
-            style={{ color: "rgb(var(--accent))" }}
-          >
-            App Password
-          </a>{" "}
-          (2-Step Verification must be on) and paste it in the password field.
-        </span>
-      )}
-    </div>
-  );
 }

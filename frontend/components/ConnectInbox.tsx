@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
-import { IMAP_PRESETS } from "@/lib/imap-presets";
+import { ImapConnectForm } from "@/components/email/ImapConnectForm";
 import { Loader2, Lock, Mail, Server, Sparkles } from "lucide-react";
 
 interface Props {
@@ -19,28 +19,11 @@ const PHASE_LABEL: Record<string, string> = {
 
 type Mode = "gmail" | "imap";
 
-interface ImapForm {
-  email_address: string;
-  host: string;
-  port: string;
-  username: string;
-  password: string;
-}
-
-const EMPTY_IMAP: ImapForm = {
-  email_address: "",
-  host: "",
-  port: "993",
-  username: "",
-  password: "",
-};
-
 export function ConnectInbox({ onConnected }: Props) {
   const [mode, setMode] = useState<Mode>("gmail");
   const [provider, setProvider] = useState<string>("Ollama");
   const [status, setStatus] = useState<"idle" | "connecting" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [imap, setImap] = useState<ImapForm>(EMPTY_IMAP);
   const [phase, setPhase] = useState<string>("idle");
   const onConnectedRef = useRef(onConnected);
   onConnectedRef.current = onConnected;
@@ -176,35 +159,6 @@ export function ConnectInbox({ onConnected }: Props) {
     }
   }
 
-  async function connectImap() {
-    if (!imap.email_address || !imap.host || !imap.username || !imap.password) {
-      setStatus("error");
-      setErrorMessage("Fill every field, including IMAP host and password.");
-      return;
-    }
-    setStatus("connecting");
-    setErrorMessage(null);
-    try {
-      const resp = await fetch(api("/api/accounts/imap/connect"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email_address: imap.email_address,
-          host: imap.host,
-          port: Number(imap.port) || 993,
-          username: imap.username || imap.email_address,
-          password: imap.password,
-        }),
-      });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${(await resp.text()).slice(0, 240)}`);
-      onConnected();
-      setStatus("idle");
-    } catch (exc) {
-      setStatus("error");
-      setErrorMessage(exc instanceof Error ? exc.message : String(exc));
-    }
-  }
-
   const isLocalLLM = provider.startsWith("Ollama");
 
   return (
@@ -275,11 +229,11 @@ export function ConnectInbox({ onConnected }: Props) {
             )}
           </>
         ) : (
-          <ImapForm
-            value={imap}
-            onChange={setImap}
-            onSubmit={connectImap}
-            disabled={status === "connecting"}
+          <ImapConnectForm
+            onCancel={() => setMode("gmail")}
+            onConnected={async () => {
+              onConnected();
+            }}
           />
         )}
 
@@ -360,102 +314,5 @@ function ModeButton({
     >
       {children}
     </button>
-  );
-}
-
-function ImapForm({
-  value,
-  onChange,
-  onSubmit,
-  disabled,
-}: {
-  value: ImapForm;
-  onChange: (next: ImapForm) => void;
-  onSubmit: () => void;
-  disabled: boolean;
-}) {
-  function applyPreset(name: string) {
-    const preset = IMAP_PRESETS.find((p) => p.name === name);
-    if (!preset) return;
-    onChange({ ...value, host: preset.host, port: String(preset.port) });
-  }
-
-  return (
-    <div className="flex flex-col gap-3">
-      <label className="text-small text-text-secondary">
-        Preset
-        <select
-          onChange={(event) => applyPreset(event.target.value)}
-          className="mt-1 w-full rounded-md border border-border bg-surface px-3 py-2 text-body outline-none focus:border-accent"
-          defaultValue=""
-        >
-          <option value="">— pick a provider —</option>
-          {IMAP_PRESETS.map((preset) => (
-            <option key={preset.name} value={preset.name}>
-              {preset.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="text-small text-text-secondary">
-        Email address
-        <input
-          type="email"
-          value={value.email_address}
-          onChange={(event) => onChange({ ...value, email_address: event.target.value })}
-          className="mt-1 w-full rounded-md border border-border bg-surface px-3 py-2 text-body outline-none focus:border-accent"
-          placeholder="you@example.com"
-          autoComplete="email"
-        />
-      </label>
-      <div className="grid grid-cols-[1fr_120px] gap-2">
-        <label className="text-small text-text-secondary">
-          IMAP host
-          <input
-            value={value.host}
-            onChange={(event) => onChange({ ...value, host: event.target.value })}
-            className="mt-1 w-full rounded-md border border-border bg-surface px-3 py-2 text-body outline-none focus:border-accent"
-            placeholder="imap.example.com"
-          />
-        </label>
-        <label className="text-small text-text-secondary">
-          Port
-          <input
-            value={value.port}
-            onChange={(event) => onChange({ ...value, port: event.target.value })}
-            className="mt-1 w-full rounded-md border border-border bg-surface px-3 py-2 text-body outline-none focus:border-accent"
-            inputMode="numeric"
-          />
-        </label>
-      </div>
-      <label className="text-small text-text-secondary">
-        Username (often your full email)
-        <input
-          value={value.username}
-          onChange={(event) => onChange({ ...value, username: event.target.value })}
-          className="mt-1 w-full rounded-md border border-border bg-surface px-3 py-2 text-body outline-none focus:border-accent"
-          autoComplete="username"
-        />
-      </label>
-      <label className="text-small text-text-secondary">
-        Password (or app-specific password)
-        <input
-          type="password"
-          value={value.password}
-          onChange={(event) => onChange({ ...value, password: event.target.value })}
-          className="mt-1 w-full rounded-md border border-border bg-surface px-3 py-2 text-body outline-none focus:border-accent"
-          autoComplete="current-password"
-        />
-      </label>
-      <button
-        type="button"
-        onClick={onSubmit}
-        disabled={disabled}
-        className="mt-2 inline-flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-body font-medium text-surface hover:opacity-90 disabled:cursor-wait disabled:opacity-60"
-        style={{ backgroundColor: "rgb(var(--accent))" }}
-      >
-        {disabled ? "Connecting…" : "Connect IMAP"}
-      </button>
-    </div>
   );
 }

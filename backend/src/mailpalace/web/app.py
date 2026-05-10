@@ -27,6 +27,14 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
     init_db()
 
+    # Hydrate any previously-saved remote-LLM API keys from the OS
+    # keyring into the in-memory Settings before the LLM router or any
+    # triage call needs them. Env vars still take precedence; the
+    # keyring is the persistence layer for keys saved through the UI.
+    from mailpalace.web.routes.settings import _load_keyring_keys as _hydrate_keys
+
+    _hydrate_keys(get_settings())
+
     # Periodic ingest: every active mailbox is refetched on a 60s tick so
     # new mail lands without the user clicking sync. The first run for
     # each account uses its existing sync state (incremental history API).

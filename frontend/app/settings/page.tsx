@@ -8,18 +8,13 @@ import {
   AccountsSection,
   type ConnectedAccount,
 } from "@/components/settings/AccountsSection";
+import {
+  LlmProviderSection,
+  type LlmSettings,
+} from "@/components/settings/LlmProviderSection";
 
-interface ProviderState {
-  api_key_set: boolean;
-  model: string;
-}
-
-interface SettingsView {
-  active_provider: "ollama" | "anthropic" | "openai";
+interface SettingsView extends LlmSettings {
   fallback_chain: string[];
-  ollama: { base_url: string; model: string };
-  anthropic: ProviderState;
-  openai: ProviderState;
   summary_locale: string;
   user_addressing: "ty" | "vy";
   poll_interval_minutes: number;
@@ -29,7 +24,6 @@ const SUMMARY_LANGS = [
   { code: "en", label: "English" },
   { code: "ru", label: "Русский" },
   { code: "uk", label: "Українська" },
-  { code: "uk-surzhyk", label: "Українсько-російський (суржик)" },
   { code: "pl", label: "Polski" },
   { code: "cs", label: "Čeština" },
   { code: "sk", label: "Slovenčina" },
@@ -44,7 +38,6 @@ const SUMMARY_LANGS = [
   { code: "no", label: "Norsk" },
   { code: "da", label: "Dansk" },
   { code: "de", label: "Deutsch" },
-  { code: "de-AT", label: "Österreichisches Deutsch" },
   { code: "it", label: "Italiano" },
   { code: "nl", label: "Nederlands" },
   { code: "lb", label: "Lëtzebuergesch" },
@@ -171,30 +164,12 @@ export default function SettingsPage() {
         onRefresh={refreshAccounts}
       />
 
-      <section className="flex flex-col gap-3">
-        <h2 className="text-h2">Active LLM provider</h2>
-        <div className="flex gap-2">
-          {(["ollama", "anthropic", "openai"] as const).map((opt) => (
-            <button
-              key={opt}
-              type="button"
-              onClick={() => patch({ active_provider: opt })}
-              className={
-                "rounded-md border px-3 py-1.5 text-body capitalize " +
-                (view.active_provider === opt
-                  ? "border-accent bg-accent text-surface"
-                  : "border-border text-text-secondary hover:bg-surface-elevated")
-              }
-            >
-              {opt}
-            </button>
-          ))}
-        </div>
-        <p className="text-small text-text-tertiary">
-          Ollama runs locally; the other two send the email body to a remote API. Switching to a
-          remote provider crosses the local-first boundary intentionally.
-        </p>
-      </section>
+      <LlmProviderSection
+        settings={view}
+        onChange={(next) => setView({ ...view, ...next })}
+        onError={setError}
+        onSavingChange={setSaving}
+      />
 
       <section className="flex flex-col gap-3">
         <h2 className="text-h2">Summary language</h2>
@@ -212,32 +187,6 @@ export default function SettingsPage() {
         <p className="text-small text-text-tertiary">
           The AI summary attached to every email is written in this language. Drafts still match
           the source email&apos;s language.
-        </p>
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <h2 className="text-h2">Ollama</h2>
-        <div className="grid grid-cols-[140px_1fr] items-baseline gap-y-2 text-body">
-          <span className="text-text-tertiary">Endpoint</span>
-          <span className="font-mono text-small text-text-secondary">{view.ollama.base_url}</span>
-          <span className="text-text-tertiary">Model</span>
-          <span className="font-mono text-small text-text-secondary">{view.ollama.model}</span>
-        </div>
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <h2 className="text-h2">Remote providers</h2>
-        <div className="grid grid-cols-[140px_120px_1fr] items-baseline gap-y-2 text-body">
-          <span className="text-text-tertiary">Anthropic</span>
-          <span className="font-mono text-small">{view.anthropic.api_key_set ? "key set" : "no key"}</span>
-          <span className="text-text-tertiary">{view.anthropic.model}</span>
-          <span className="text-text-tertiary">OpenAI</span>
-          <span className="font-mono text-small">{view.openai.api_key_set ? "key set" : "no key"}</span>
-          <span className="text-text-tertiary">{view.openai.model}</span>
-        </div>
-        <p className="text-small text-text-tertiary">
-          API keys are configured via env vars (<code>MAILPALACE_ANTHROPIC_API_KEY</code>,{" "}
-          <code>MAILPALACE_OPENAI_API_KEY</code>) and never returned by the API.
         </p>
       </section>
     </main>

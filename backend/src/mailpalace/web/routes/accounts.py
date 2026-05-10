@@ -277,6 +277,32 @@ class ImapConnectRequest(BaseModel):
     label: str | None = None
 
 
+@router.get(
+    "/accounts/imap/probe",
+    summary="Check whether an IMAP host is reachable from this machine",
+    description=(
+        "Used by the wizard to detect whether Proton Bridge is running "
+        "on 127.0.0.1:1143 before the user fills out the form. Returns "
+        "{reachable: bool} after a 2-second TCP probe; never throws so "
+        "the wizard never blocks on this. Suitable for any host/port "
+        "pair, not just Bridge."
+    ),
+)
+async def probe_imap_host(host: str, port: int = 993) -> dict:
+    """Best-effort TCP reachability check. No login attempt."""
+    import socket as _socket
+
+    def _probe() -> bool:
+        try:
+            with _socket.create_connection((host, port), timeout=2):
+                return True
+        except OSError:
+            return False
+
+    reachable = await asyncio.to_thread(_probe)
+    return {"reachable": reachable, "host": host, "port": port}
+
+
 @router.post(
     "/accounts/imap/connect",
     response_model=AccountSummary,
