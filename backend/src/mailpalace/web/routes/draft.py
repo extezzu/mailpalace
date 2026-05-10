@@ -36,13 +36,18 @@ class DraftResponse(BaseModel):
     ),
 )
 async def post_draft(req: DraftRequest) -> DraftResponse:
-    """Run the draft pipeline and return the generated reply.
-
-    If every LLM provider is unreachable, the pipeline falls back to a
-    templated stub draft and the response carries `provider_used =
-    'demo:fallback'`, so the UI never blocks on missing infrastructure.
-    """
-    draft = await generate_draft(req.email_id, req.instructions)
+    """Generate a draft reply via the active LLM provider."""
+    try:
+        draft = await generate_draft(req.email_id, req.instructions)
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "No LLM provider is reachable. Install Ollama "
+                "(https://ollama.com/download) and run `ollama pull llama3.1:8b`, "
+                "or set MAILPALACE_ANTHROPIC_API_KEY / MAILPALACE_OPENAI_API_KEY."
+            ),
+        ) from exc
     if draft is None:
         raise HTTPException(status_code=404, detail="Email not found")
     return DraftResponse(

@@ -1,8 +1,9 @@
 """Draft generation.
 
 Produces a reply in the source language of the email. Tone is steerable via
-free-form ``instructions``. When no LLM provider is reachable, falls back to
-a templated stub so the demo never blocks on missing infrastructure.
+free-form ``instructions``. The pipeline always goes through the configured
+LLM provider; if every provider is unreachable, the router raises and the
+caller surfaces an actionable error instead of inventing a stub.
 """
 
 from __future__ import annotations
@@ -16,44 +17,6 @@ from mailpalace.llm.prompts import build_draft_prompt
 from mailpalace.llm.router import get_router
 
 logger = logging.getLogger(__name__)
-
-
-_FALLBACK_GREETING = {
-    "en": "Hi",
-    "ru": "Привет",
-    "uk": "Привіт",
-    "da": "Hej",
-    "de": "Hallo",
-    "fr": "Bonjour",
-    "es": "Hola",
-    "it": "Ciao",
-    "pl": "Cześć",
-    "pt": "Olá",
-    "nl": "Hallo",
-    "sv": "Hej",
-    "no": "Hei",
-    "fi": "Hei",
-    "cs": "Ahoj",
-    "sk": "Ahoj",
-    "hu": "Szia",
-    "ro": "Bună",
-}
-
-_FALLBACK_BODY = {
-    "en": "Thanks for reaching out about \"{subject}\". I will look at this in detail and reply by EOD. Quick question: is there a hard deadline I should know about?\n\nBest,\nDmytro",
-    "ru": "Спасибо, что написал про «{subject}». Гляну подробно и отвечу до конца дня. Уточняющий вопрос: есть жёсткий дедлайн, про который мне стоит знать?\n\nС уважением,\nДмитрий",
-    "uk": "Дякую, що написав про «{subject}». Подивлюся детально і відповім до кінця дня. Уточнення: чи є жорсткий дедлайн, який варто пам'ятати?\n\nЗ повагою,\nДмитро",
-    "da": "Tak for din mail om \"{subject}\". Jeg ser nærmere på det og vender tilbage inden dagens slutning. Hurtigt spørgsmål: er der en hård deadline, jeg skal kende?\n\nMvh,\nDmytro",
-}
-
-
-def _fallback_draft(language: str, subject: str | None) -> str:
-    lang_key = language if language in _FALLBACK_BODY else "en"
-    greet = _FALLBACK_GREETING.get(lang_key, "Hi")
-    body = _FALLBACK_BODY.get(lang_key, _FALLBACK_BODY["en"]).format(
-        subject=subject or "your email"
-    )
-    return f"{greet},\n\n{body}"
 
 
 async def generate_draft(email_id: int, instructions: str | None = None) -> Draft | None:
@@ -85,22 +48,15 @@ async def generate_draft(email_id: int, instructions: str | None = None) -> Draf
         max_tokens=600,
     )
 
-    try:
-        router = get_router()
-        resp = await router.complete(req)
-        draft_body = resp.text.strip()
-        provider_used = resp.provider
-    except RuntimeError as exc:
-        logger.warning("LLM unavailable, returning templated fallback: %s", exc)
-        draft_body = _fallback_draft(language, subject)
-        provider_used = "demo:fallback"
+    router = get_router()
+    resp = await router.complete(req)
 
     with session_scope() as session:
         draft = Draft(
             email_id=email_id,
-            body=draft_body,
+            body=resp.text.strip(),
             language_code=language,
-            provider_used=provider_used,
+            provider_used=resp.provider,
             instructions=instructions,
         )
         session.add(draft)
