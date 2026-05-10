@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Plus, Server, Trash2 } from "lucide-react";
 
@@ -75,7 +76,7 @@ export default function SettingsPage() {
 
   async function refreshAccounts() {
     try {
-      const resp = await fetch("/api/accounts");
+      const resp = await fetch(api("/api/accounts"));
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       setAccounts(await resp.json());
     } catch (exc) {
@@ -86,7 +87,7 @@ export default function SettingsPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [settingsResp] = await Promise.all([fetch("/api/settings"), refreshAccounts()]);
+        const [settingsResp] = await Promise.all([fetch(api("/api/settings")), refreshAccounts()]);
         if (!settingsResp.ok) throw new Error(`HTTP ${settingsResp.status}`);
         setView(await settingsResp.json());
       } catch (exc) {
@@ -99,7 +100,7 @@ export default function SettingsPage() {
   async function patch(body: Record<string, unknown>) {
     setSaving(true);
     try {
-      const resp = await fetch("/api/settings", {
+      const resp = await fetch(api("/api/settings"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -118,7 +119,7 @@ export default function SettingsPage() {
       return;
     }
     try {
-      const resp = await fetch(`/api/accounts/${account.id}`, { method: "DELETE" });
+      const resp = await fetch(api(`/api/accounts/${account.id}`), { method: "DELETE" });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       await refreshAccounts();
     } catch (exc) {
@@ -258,7 +259,7 @@ function AccountsSection({
     let cancelled = false;
     const id = window.setInterval(async () => {
       try {
-        const resp = await fetch("/api/accounts/gmail/status");
+        const resp = await fetch(api("/api/accounts/gmail/status"));
         if (!resp.ok) return;
         const state: { phase: string; error: string | null } = await resp.json();
         if (cancelled) return;
@@ -285,7 +286,7 @@ function AccountsSection({
     setAdding("gmail");
     setPhase("starting");
     try {
-      const resp = await fetch("/api/accounts/gmail/connect", { method: "POST" });
+      const resp = await fetch(api("/api/accounts/gmail/connect"), { method: "POST" });
       if (!resp.ok) {
         const body = await resp.text();
         throw new Error(`HTTP ${resp.status}: ${body.slice(0, 240)}`);
@@ -430,7 +431,7 @@ function ImapForm({
     setBusy(true);
     setError(null);
     try {
-      const resp = await fetch("/api/accounts/imap/connect", {
+      const resp = await fetch(api("/api/accounts/imap/connect"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

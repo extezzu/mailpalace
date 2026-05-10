@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
 import { Archive, Clock, MoreHorizontal, Send, Sparkles } from "lucide-react";
 import type { EmailListItem } from "@/lib/types";
 import { avatarBg, formatRelativeTime, MOCK_REFERENCE_NOW_MS, senderInitials } from "@/lib/utils";
@@ -48,7 +49,7 @@ export function ThreadViewer({ email, body, userReply, onMarkRepliedSent }: Prop
     onMarkRepliedSent?.(trimmed);
     setSendNotice("Reply queued. Real send ships in v0.1; this thread moved to Sent.");
     try {
-      await fetch(`/api/email/${email.id}/mark_replied`, { method: "POST" });
+      await fetch(api(`/api/email/${email.id}/mark_replied`), { method: "POST" });
     } catch {
       /* offline-tolerant; the local state already moved the email */
     }
@@ -57,7 +58,7 @@ export function ThreadViewer({ email, body, userReply, onMarkRepliedSent }: Prop
   async function generateDraft() {
     setDraft({ body: "", loading: true, error: null, meta: null });
     try {
-      const resp = await fetch("/api/draft", {
+      const resp = await fetch(api("/api/draft"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email_id: email.id }),

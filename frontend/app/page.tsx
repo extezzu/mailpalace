@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { api } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { ConnectInbox } from "@/components/ConnectInbox";
 import { EmailListItem as EmailRow } from "@/components/email/EmailListItem";
@@ -91,7 +92,7 @@ function importanceRank(email: EmailListItem): number {
 }
 
 async function fetchInbox(): Promise<EmailListItem[]> {
-  const resp = await fetch("/api/inbox?folder=all&limit=200");
+  const resp = await fetch(api("/api/inbox?folder=all&limit=200"));
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   const data = await resp.json();
   return data.emails as EmailListItem[];
@@ -112,7 +113,7 @@ export default function HomePage() {
 
   async function reloadAccounts(): Promise<{ id: number; email_address: string }[]> {
     try {
-      const resp = await fetch("/api/accounts");
+      const resp = await fetch(api("/api/accounts"));
       if (!resp.ok) return [];
       const list: { id: number; email_address: string }[] = await resp.json();
       setAccounts(list);
@@ -130,9 +131,9 @@ export default function HomePage() {
     async function load() {
       try {
         const [settingsResp, inbox, accountList] = await Promise.all([
-          fetch("/api/settings"),
+          fetch(api("/api/settings")),
           fetchInbox(),
-          fetch("/api/accounts").then((r) => (r.ok ? r.json() : [])),
+          fetch(api("/api/accounts")).then((r) => (r.ok ? r.json() : [])),
         ]);
         if (cancelled) return;
         if (settingsResp.ok) {
@@ -289,7 +290,7 @@ export default function HomePage() {
       return next;
     });
     try {
-      await fetch("/api/email/bulk_delete", {
+      await fetch(api("/api/email/bulk_delete"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email_ids: emailIds }),
@@ -304,14 +305,14 @@ export default function HomePage() {
     setRetriaging(true);
     setRetriageProgress({ current: 0, total: 0 });
     try {
-      await fetch("/api/settings", {
+      await fetch(api("/api/settings"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ summary_locale: next }),
       });
       // Kick off the retriage in the background; the endpoint returns
       // immediately so the UI never blocks for the full LLM cycle.
-      await fetch("/api/retriage_all", { method: "POST" });
+      await fetch(api("/api/retriage_all"), { method: "POST" });
       // Poll the progress endpoint until the worker is done. 1.5s cadence
       // is fast enough to feel responsive but doesn't drown the backend.
       const POLL_MS = 1500;
@@ -321,7 +322,7 @@ export default function HomePage() {
       while (true) {
         await new Promise((resolve) => setTimeout(resolve, POLL_MS));
         try {
-          const resp = await fetch("/api/retriage_progress");
+          const resp = await fetch(api("/api/retriage_progress"));
           if (!resp.ok) break;
           const status: {
             processing: boolean;

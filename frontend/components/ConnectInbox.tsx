@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { api } from "@/lib/api";
 import { Lock, Mail, Server, Sparkles } from "lucide-react";
 
 interface Props {
@@ -59,7 +60,7 @@ export function ConnectInbox({ onConnected }: Props) {
     let cancelled = false;
     async function tick() {
       try {
-        const resp = await fetch("/api/accounts");
+        const resp = await fetch(api("/api/accounts"));
         if (!resp.ok) return;
         const list = await resp.json();
         if (!cancelled && Array.isArray(list) && list.length > 0) {
@@ -83,7 +84,7 @@ export function ConnectInbox({ onConnected }: Props) {
     let cancelled = false;
     const id = window.setInterval(async () => {
       try {
-        const resp = await fetch("/api/accounts/gmail/status");
+        const resp = await fetch(api("/api/accounts/gmail/status"));
         if (!resp.ok) return;
         const state: { phase: string } = await resp.json();
         if (!cancelled) setPhase(state.phase);
@@ -103,7 +104,7 @@ export function ConnectInbox({ onConnected }: Props) {
     let cancelled = false;
     async function load() {
       try {
-        const resp = await fetch("/api/settings");
+        const resp = await fetch(api("/api/settings"));
         if (!resp.ok) return;
         const data = await resp.json();
         if (cancelled) return;
@@ -127,7 +128,7 @@ export function ConnectInbox({ onConnected }: Props) {
     setStatus("connecting");
     setErrorMessage(null);
     try {
-      const startResp = await fetch("/api/accounts/gmail/connect", { method: "POST" });
+      const startResp = await fetch(api("/api/accounts/gmail/connect"), { method: "POST" });
       if (!startResp.ok) {
         throw new Error(`HTTP ${startResp.status}: ${(await startResp.text()).slice(0, 240)}`);
       }
@@ -144,7 +145,7 @@ export function ConnectInbox({ onConnected }: Props) {
           throw new Error("Timed out waiting for Google consent.");
         }
         try {
-          const accountsResp = await fetch("/api/accounts");
+          const accountsResp = await fetch(api("/api/accounts"));
           if (accountsResp.ok) {
             const list = await accountsResp.json();
             if (Array.isArray(list) && list.length > 0) break;
@@ -153,7 +154,7 @@ export function ConnectInbox({ onConnected }: Props) {
           /* keep polling */
         }
         try {
-          const statusResp = await fetch("/api/accounts/gmail/status");
+          const statusResp = await fetch(api("/api/accounts/gmail/status"));
           if (statusResp.ok) {
             const state: { phase: string; error: string | null } = await statusResp.json();
             if (state.phase === "error") {
@@ -182,7 +183,7 @@ export function ConnectInbox({ onConnected }: Props) {
     setStatus("connecting");
     setErrorMessage(null);
     try {
-      const resp = await fetch("/api/accounts/imap/connect", {
+      const resp = await fetch(api("/api/accounts/imap/connect"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

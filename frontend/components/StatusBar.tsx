@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
 import { Lock, Sparkles } from "lucide-react";
 
 interface Props {
@@ -64,7 +65,7 @@ export function StatusBar({
     let cancelled = false;
     async function poll() {
       try {
-        const resp = await fetch("/api/health");
+        const resp = await fetch(api("/api/health"));
         if (!cancelled) setLlmHealthy(resp.ok);
       } catch {
         if (!cancelled) setLlmHealthy(false);
