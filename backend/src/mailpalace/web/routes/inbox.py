@@ -63,7 +63,7 @@ def get_inbox(
     language: str | None = Query(default=None, description="csv: en,ru,uk,..."),
     unread: bool = Query(default=False),
     q: str | None = Query(default=None),
-    limit: int = Query(default=50, le=200),
+    limit: int = Query(default=50, le=1000),
     cursor: datetime | None = Query(default=None),
     folder: str = Query(default="inbox", description="inbox | sent | trash | all"),
 ) -> InboxResponse:

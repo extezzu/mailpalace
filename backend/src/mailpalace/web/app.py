@@ -26,7 +26,51 @@ from mailpalace.web.routes import (
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
     init_db()
-    yield
+
+    # Periodic ingest: every active mailbox is refetched on a 60s tick so
+    # new mail lands without the user clicking sync. The first run for
+    # each account uses its existing sync state (incremental history API).
+    import asyncio
+    import logging as _logging
+    from sqlalchemy import select as _select
+
+    from mailpalace.db.engine import session_scope as _session_scope
+    from mailpalace.db.schema import Account as _Account
+    from mailpalace.pipeline.ingest import ingest_account as _ingest
+
+    _log = _logging.getLogger(__name__)
+    _stop = asyncio.Event()
+
+    async def poll_loop() -> None:
+        while not _stop.is_set():
+            try:
+                with _session_scope() as session:
+                    ids = list(
+                        session.scalars(
+                            _select(_Account.id).where(_Account.is_active.is_(True))
+                        ).all()
+                    )
+                for account_id in ids:
+                    try:
+                        await _ingest(int(account_id))
+                    except Exception:
+                        _log.exception("scheduled ingest failed for %d", account_id)
+            except Exception:
+                _log.exception("poll loop iteration crashed")
+            try:
+                await asyncio.wait_for(_stop.wait(), timeout=60)
+            except asyncio.TimeoutError:
+                pass
+
+    poll_task = asyncio.create_task(poll_loop())
+    try:
+        yield
+    finally:
+        _stop.set()
+        try:
+            await asyncio.wait_for(poll_task, timeout=5)
+        except asyncio.TimeoutError:
+            poll_task.cancel()
 
 
 def create_app() -> FastAPI:
