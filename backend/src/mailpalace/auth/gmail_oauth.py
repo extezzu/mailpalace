@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -52,14 +53,28 @@ def _load_client_config() -> dict[str, Any]:
     )
 
 
-def run_install_flow() -> tuple[Credentials, dict[str, Any]]:
+def run_install_flow(
+    on_url: Callable[[str], None] | None = None,
+) -> tuple[Credentials, dict[str, Any]]:
     """Open the local browser, return fresh credentials + the user profile.
 
     Blocks until the user approves the consent screen. The Google client
-    library spawns a one-off localhost listener for the redirect.
+    library spawns a one-off localhost listener for the redirect. If
+    ``on_url`` is provided we hand it the consent URL before any browser
+    launch so the caller can publish it for the UI to expose as a
+    fallback link when the OS browser-launch fails silently.
     """
     client_config = _load_client_config()
     flow = InstalledAppFlow.from_client_config(client_config, SCOPES)
+    if on_url is not None:
+        # Spin up the redirect URI the same way run_local_server does, so
+        # the URL we publish here is the one the user will actually visit.
+        flow.redirect_uri = "http://localhost:0"
+        auth_url, _state = flow.authorization_url(prompt="consent", access_type="offline")
+        try:
+            on_url(auth_url)
+        except Exception:
+            logger.exception("on_url callback failed")
     creds = flow.run_local_server(port=0, open_browser=True)
     profile = build("gmail", "v1", credentials=creds).users().getProfile(userId="me").execute()
     return creds, profile

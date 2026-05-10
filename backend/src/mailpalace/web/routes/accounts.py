@@ -32,6 +32,9 @@ _OAUTH_STATE: dict[str, str | int | None] = {
     "error": None,
     "started_at": None,
     "finished_at": None,
+    # Published when the worker generates the consent URL. Frontend uses
+    # this as a fallback link when the OS browser-launch fails silently.
+    "consent_url": None,
 }
 _OAUTH_LOCK = asyncio.Lock()
 
@@ -98,13 +101,20 @@ async def _gmail_oauth_worker() -> None:
             account_id=None,
             email_address=None,
             error=None,
+            consent_url=None,
             started_at=datetime.now(tz=timezone.utc).isoformat(),
             finished_at=None,
         )
+
+        def _publish_url(url: str) -> None:
+            _OAUTH_STATE["consent_url"] = url
+
         try:
             # run_install_flow blocks on the consent screen + redirect, so
             # offload it to a thread to keep the event loop free.
-            creds, profile = await asyncio.to_thread(gmail_oauth.run_install_flow)
+            creds, profile = await asyncio.to_thread(
+                gmail_oauth.run_install_flow, _publish_url
+            )
             email_address = profile.get("emailAddress")
             if not email_address:
                 raise RuntimeError("Google did not return a profile email")

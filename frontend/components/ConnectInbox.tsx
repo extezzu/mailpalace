@@ -77,8 +77,12 @@ export function ConnectInbox({ onConnected }: Props) {
     };
   }, []);
 
+  const [consentUrl, setConsentUrl] = useState<string | null>(null);
+
   // Mirror the backend phase into local state so the button label is honest
   // about what's happening (Waiting for consent / Exchanging / Ingesting).
+  // Also surfaces the consent URL so the user can open Google manually if
+  // the OS browser-launch fails silently (some Windows configurations).
   useEffect(() => {
     if (status !== "connecting") return;
     let cancelled = false;
@@ -86,8 +90,11 @@ export function ConnectInbox({ onConnected }: Props) {
       try {
         const resp = await fetch(api("/api/accounts/gmail/status"));
         if (!resp.ok) return;
-        const state: { phase: string } = await resp.json();
-        if (!cancelled) setPhase(state.phase);
+        const state: { phase: string; consent_url: string | null } = await resp.json();
+        if (!cancelled) {
+          setPhase(state.phase);
+          setConsentUrl(state.consent_url);
+        }
       } catch {
         /* ignore */
       }
@@ -242,17 +249,33 @@ export function ConnectInbox({ onConnected }: Props) {
         </div>
 
         {mode === "gmail" ? (
-          <button
-            type="button"
-            onClick={connectGmail}
-            disabled={status === "connecting"}
-            className="inline-flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-body font-medium text-surface hover:opacity-90 disabled:cursor-wait disabled:opacity-60"
-            style={{ backgroundColor: "rgb(var(--accent))" }}
-          >
-            {status === "connecting"
-              ? PHASE_LABEL[phase] ?? "Waiting for Google consent…"
-              : "Continue with Google"}
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={connectGmail}
+              disabled={status === "connecting"}
+              className="inline-flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-body font-medium text-surface hover:opacity-90 disabled:cursor-wait disabled:opacity-60"
+              style={{ backgroundColor: "rgb(var(--accent))" }}
+            >
+              {status === "connecting"
+                ? PHASE_LABEL[phase] ?? "Waiting for Google consent…"
+                : "Continue with Google"}
+            </button>
+            {status === "connecting" && phase === "awaiting_consent" && consentUrl && (
+              <p className="text-small text-text-secondary">
+                Browser didn&apos;t open?{" "}
+                <a
+                  href={consentUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline"
+                  style={{ color: "rgb(var(--accent))" }}
+                >
+                  Open Google consent in a new tab.
+                </a>
+              </p>
+            )}
+          </>
         ) : (
           <ImapForm
             value={imap}
