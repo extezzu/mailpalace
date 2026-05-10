@@ -51,9 +51,8 @@ class InboxResponse(BaseModel):
     summary="List emails with AI metadata",
     description=(
         "Cursor-paginated email list. Filter by account, classification, "
-        "language, unread state, or free-text query. Each row carries the "
-        "joined AI block (classification, Russian summary, suggested action) "
-        "when triage has finished for that email."
+        "language, unread state, free-text query, or folder. Each row "
+        "carries the joined AI block when triage has finished."
     ),
 )
 def get_inbox(
@@ -65,6 +64,7 @@ def get_inbox(
     q: str | None = Query(default=None),
     limit: int = Query(default=50, le=200),
     cursor: datetime | None = Query(default=None),
+    folder: str = Query(default="inbox", description="inbox | sent | trash | all"),
 ) -> InboxResponse:
     classifications = (
         [item.strip() for item in classification.split(",")] if classification else None
@@ -80,6 +80,7 @@ def get_inbox(
         query=q,
         limit=limit,
         cursor=cursor,
+        folder=folder,
     )
 
     items: list[EmailListItem] = []

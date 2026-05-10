@@ -8,7 +8,9 @@ import { avatarBg, formatRelativeTime, MOCK_REFERENCE_NOW_MS, senderInitials } f
 interface Props {
   email: EmailListItem;
   body: string;
-  onMarkRepliedSent?: () => void;
+  /** Reply text the user previously sent for this email, if any. */
+  userReply?: string | null;
+  onMarkRepliedSent?: (replyBody: string) => void;
 }
 
 interface DraftState {
@@ -20,10 +22,12 @@ interface DraftState {
 
 const INITIAL_DRAFT: DraftState = { body: "", loading: false, error: null, meta: null };
 
-export function ThreadViewer({ email, body, onMarkRepliedSent }: Props) {
+export function ThreadViewer({ email, body, userReply, onMarkRepliedSent }: Props) {
   const [draft, setDraft] = useState<DraftState>(INITIAL_DRAFT);
   const [reply, setReply] = useState("");
   const [sendNotice, setSendNotice] = useState<string | null>(null);
+
+  const isSent = Boolean(userReply);
 
   // Reset reply text when the user clicks a different email.
   useEffect(() => {
@@ -32,16 +36,22 @@ export function ThreadViewer({ email, body, onMarkRepliedSent }: Props) {
     setSendNotice(null);
   }, [email.id]);
 
-  function handleSend() {
-    if (!reply.trim()) {
+  async function handleSend() {
+    const trimmed = reply.trim();
+    if (!trimmed) {
       setSendNotice("Empty reply. Type or generate a draft before sending.");
       return;
     }
-    // Real outbound delivery is wired in v0.1 with the gmail.modify scope.
-    // For v0 we simulate the post-send transition: the email moves out of
-    // the inbox into Sent, with the draft body kept as the user's reply.
-    setSendNotice("Reply queued. Real send ships in v0.1; the email moved to Sent locally.");
-    onMarkRepliedSent?.();
+    // Real outbound delivery via gmail.modify ships in v0.1. For v0 we
+    // persist the "this email was replied to" flag on the backend and keep
+    // the reply text on the client so the Sent folder can render it.
+    onMarkRepliedSent?.(trimmed);
+    setSendNotice("Reply queued. Real send ships in v0.1; this thread moved to Sent.");
+    try {
+      await fetch(`/api/email/${email.id}/mark_replied`, { method: "POST" });
+    } catch {
+      /* offline-tolerant; the local state already moved the email */
+    }
   }
 
   async function generateDraft() {
@@ -133,12 +143,26 @@ export function ThreadViewer({ email, body, onMarkRepliedSent }: Props) {
             {body}
           </div>
         </article>
+
+        {userReply && (
+          <article
+            className="mt-3 rounded-xl border bg-surface-elevated p-4"
+            style={{ borderColor: "rgb(var(--accent) / 0.4)" }}
+          >
+            <header className="mb-2 flex items-center gap-2 text-caption font-mono uppercase tracking-wider text-text-tertiary">
+              You · sent
+            </header>
+            <div className="prose prose-sm max-w-none whitespace-pre-wrap font-sans text-body text-text-primary">
+              {userReply}
+            </div>
+          </article>
+        )}
       </div>
 
       <div className="border-t border-border bg-surface p-4">
         <div className="rounded-lg border border-border bg-surface-elevated focus-within:border-accent">
           <textarea
-            placeholder="Write a reply..."
+            placeholder={isSent ? "This thread is in Sent. Write a follow-up..." : "Write a reply..."}
             value={reply}
             onChange={(event) => setReply(event.target.value)}
             rows={4}

@@ -19,6 +19,7 @@ interface RowFlags {
   snoozed: boolean;
   deleted: boolean;
   sent: boolean;
+  reply: string | null;
 }
 
 const BODIES: Record<number, string> = {
@@ -57,9 +58,14 @@ function buildInitialFlags(): Record<number, RowFlags> {
       snoozed: false,
       deleted: false,
       sent: false,
+      reply: null,
     };
   }
   return out;
+}
+
+function rowIsActive(flags: RowFlags | undefined): boolean {
+  return Boolean(flags && !flags.deleted && !flags.sent && !flags.snoozed);
 }
 
 export default function HomePage() {
@@ -102,20 +108,20 @@ export default function HomePage() {
   );
 
   const counts = useMemo(() => {
-    const inboxFn = (e: EmailListItem) => {
-      const f = flags[e.id];
-      if (!f || f.deleted || f.sent || f.snoozed) return false;
-      const cls = e.ai?.classification ?? "other";
-      return !NEWSLETTERS.includes(cls as Classification);
-    };
+    // AI buckets only count rows that are still actively in Inbox state:
+    // not deleted, not replied/sent, not snoozed. The classification is
+    // the same as in the inbox view but folder rules apply first.
+    const activeInbox = liveEmails.filter((e) => rowIsActive(flags[e.id]));
     return {
-      inbox: liveEmails.filter(inboxFn).length,
+      inbox: activeInbox.filter(
+        (e) => !NEWSLETTERS.includes((e.ai?.classification ?? "other") as Classification),
+      ).length,
       sent: 0,
       trash: 0,
-      urgent: liveEmails.filter((e) => !flags[e.id]?.deleted && e.ai?.classification === "urgent").length,
-      important: liveEmails.filter((e) => !flags[e.id]?.deleted && e.ai?.classification === "important").length,
-      newsletter: liveEmails.filter(
-        (e) => !flags[e.id]?.deleted && NEWSLETTERS.includes((e.ai?.classification ?? "other") as Classification),
+      urgent: activeInbox.filter((e) => e.ai?.classification === "urgent").length,
+      important: activeInbox.filter((e) => e.ai?.classification === "important").length,
+      newsletter: activeInbox.filter(
+        (e) => NEWSLETTERS.includes((e.ai?.classification ?? "other") as Classification),
       ).length,
       promotion: 0,
       transactional: 0,
@@ -134,22 +140,21 @@ export default function HomePage() {
   );
 
   const filtered = useMemo(() => {
-    const list = liveEmails.filter((email) => {
+    return liveEmails.filter((email) => {
       const f = flags[email.id];
       if (!f) return false;
       if (activeFilter === "trash") return f.deleted;
-      if (f.deleted) return false;
       if (activeFilter === "sent") return f.sent;
-      if (f.sent) return false;
+      // Every remaining folder is "live inbox": skip rows that left it.
+      if (!rowIsActive(f)) return false;
+      const cls = (email.ai?.classification ?? "other") as Classification;
       if (activeFilter === "inbox") {
-        if (f.snoozed) return false;
-        const cls = email.ai?.classification ?? "other";
-        return !NEWSLETTERS.includes(cls as Classification);
+        return !NEWSLETTERS.includes(cls);
       }
-      // AI buckets filter by classification
-      return email.ai?.classification === activeFilter;
+      // AI buckets: urgent / important / newsletter (also includes promo)
+      if (activeFilter === "newsletter") return NEWSLETTERS.includes(cls);
+      return cls === activeFilter;
     });
-    return list;
   }, [liveEmails, flags, activeFilter]);
 
   const selected = filtered.find((e) => e.id === selectedId) ?? filtered[0] ?? null;
@@ -193,11 +198,30 @@ export default function HomePage() {
     }));
   }
 
-  function markSent(emailId: number) {
+  function markSent(emailId: number, replyBody: string) {
     setFlags((prev) => ({
       ...prev,
-      [emailId]: { ...prev[emailId], sent: true, read: true },
+      [emailId]: { ...prev[emailId], sent: true, read: true, reply: replyBody },
     }));
+  }
+
+  async function bulkDelete(emailIds: number[]) {
+    setFlags((prev) => {
+      const next = { ...prev };
+      for (const id of emailIds) {
+        next[id] = { ...prev[id], deleted: true };
+      }
+      return next;
+    });
+    try {
+      await fetch("/api/email/bulk_delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email_ids: emailIds }),
+      });
+    } catch {
+      /* local state already updated */
+    }
   }
 
   async function changeSummaryLocale(next: string) {
@@ -213,7 +237,6 @@ export default function HomePage() {
     }
   }
 
-  const accountInitial = accountEmail.charAt(0);
 
   return (
     <main className="flex h-screen w-screen flex-col overflow-hidden">
@@ -232,7 +255,6 @@ export default function HomePage() {
           trashCount={trashCount}
           sentCount={sentCount}
           accountEmail={accountEmail}
-          accountInitial={accountInitial}
           onSelect={setActiveFilter}
           onSettings={() => router.push("/settings")}
         />
@@ -274,7 +296,8 @@ export default function HomePage() {
               <ThreadViewer
                 email={selected}
                 body={BODIES[selected.id] ?? selected.snippet ?? ""}
-                onMarkRepliedSent={() => markSent(selected.id)}
+                userReply={flags[selected.id]?.reply ?? null}
+                onMarkRepliedSent={(replyBody) => markSent(selected.id, replyBody)}
               />
             </div>
             <AiMetaSidebar email={selected} />

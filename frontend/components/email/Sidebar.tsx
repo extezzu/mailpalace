@@ -19,7 +19,8 @@ interface Props {
   onSelect: (filter: Filter) => void;
   onSettings: () => void;
   accountEmail: string;
-  accountInitial: string;
+  /** Profile picture URL; falls back to the bundled fallback avatar. */
+  accountAvatar?: string | null;
 }
 
 export function Sidebar({
@@ -30,7 +31,7 @@ export function Sidebar({
   onSelect,
   onSettings,
   accountEmail,
-  accountInitial,
+  accountAvatar,
 }: Props) {
   const folders: NavItem[] = [
     { icon: Inbox, label: "Inbox", filter: "inbox", count: counts.inbox },
@@ -47,9 +48,14 @@ export function Sidebar({
   return (
     <aside className="flex h-full w-[220px] shrink-0 flex-col border-r border-border bg-bg">
       <div className="flex h-12 items-center gap-2 border-b border-border px-4">
-        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-accent font-mono text-caption font-bold text-surface">
-          {accountInitial.toUpperCase().slice(0, 1)}
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={accountAvatar ?? "/avatar-fallback.png"}
+          alt="MailPalace"
+          width={28}
+          height={28}
+          className="rounded-full"
+        />
         <div className="flex flex-1 min-w-0 flex-col leading-tight">
           <span className="text-body font-semibold text-text-primary">MailPalace</span>
           <span className="truncate text-caption text-text-tertiary" title={accountEmail}>

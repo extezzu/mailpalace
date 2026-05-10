@@ -85,6 +85,13 @@ class Email(Base):
     is_unread: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_starred: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     has_attachments: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # When set, the user replied to (or sent) this email. Inbox queries hide
+    # these rows; the Sent folder reads them.
+    replied_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # When set, the row has been moved to the Trash folder.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # When set, the email is hidden from the inbox until this timestamp.
+    snoozed_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     ingested_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.current_timestamp(), nullable=False
     )

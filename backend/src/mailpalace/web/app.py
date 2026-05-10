@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from mailpalace.config import get_settings
 from mailpalace.db.engine import init_db
 from mailpalace.logging import configure_logging
-from mailpalace.web.routes import draft, email, events, inbox, settings
+from mailpalace.web.routes import draft, email, email_actions, events, inbox, settings
 
 
 @asynccontextmanager
@@ -46,6 +46,7 @@ def create_app() -> FastAPI:
 
     app.include_router(inbox.router, prefix="/api")
     app.include_router(email.router, prefix="/api")
+    app.include_router(email_actions.router, prefix="/api")
     app.include_router(draft.router, prefix="/api")
     app.include_router(settings.router, prefix="/api")
     app.include_router(events.router, prefix="/api")

@@ -223,7 +223,10 @@ DEMO_EMAILS: list[dict[str, Any]] = [
 def seed_demo_data() -> int:
     """Insert demo emails. Idempotent: a second run is a no-op."""
     init_db()
-    now = datetime.now(tz=timezone.utc)
+    # SQLite stores datetimes as text and SQLAlchemy reads them back naive,
+    # so keep seed timestamps naive too to avoid mixed comparisons in
+    # `upsert_thread`.
+    now = datetime.utcnow()
 
     with session_scope() as session:
         existing = session.scalar(

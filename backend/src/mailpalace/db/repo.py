@@ -44,13 +44,32 @@ def list_inbox(
     query: str | None = None,
     limit: int = 50,
     cursor: datetime | None = None,
+    folder: str = "inbox",
 ) -> list[Email]:
+    """Return emails in one folder.
+
+    `folder` controls which row state we want:
+      - "inbox": not replied, not deleted, not snoozed.
+      - "sent":  replied_at IS NOT NULL.
+      - "trash": deleted_at IS NOT NULL.
+      - "all":   no folder predicate; useful for /api/email/{id} lookups.
+    """
     stmt = (
         select(Email)
         .options(joinedload(Email.ai))
         .order_by(Email.received_at.desc())
         .limit(limit)
     )
+    if folder == "inbox":
+        stmt = stmt.where(
+            Email.replied_at.is_(None),
+            Email.deleted_at.is_(None),
+            Email.snoozed_until.is_(None),
+        )
+    elif folder == "sent":
+        stmt = stmt.where(Email.replied_at.is_not(None))
+    elif folder == "trash":
+        stmt = stmt.where(Email.deleted_at.is_not(None))
     if account_id is not None:
         stmt = stmt.where(Email.account_id == account_id)
     if unread_only:
@@ -67,6 +86,50 @@ def list_inbox(
         like = f"%{query}%"
         stmt = stmt.where((Email.subject.ilike(like)) | (Email.snippet.ilike(like)))
     return list(session.scalars(stmt).unique().all())
+
+
+def mark_email_replied(session: Session, email_id: int) -> Email | None:
+    email = session.get(Email, email_id)
+    if email is None:
+        return None
+    email.replied_at = _utcnow()
+    email.is_unread = False
+    return email
+
+
+def mark_email_deleted(session: Session, email_id: int) -> Email | None:
+    email = session.get(Email, email_id)
+    if email is None:
+        return None
+    email.deleted_at = _utcnow()
+    return email
+
+
+def mark_email_unread(session: Session, email_id: int, is_unread: bool) -> Email | None:
+    email = session.get(Email, email_id)
+    if email is None:
+        return None
+    email.is_unread = is_unread
+    return email
+
+
+def snooze_email(session: Session, email_id: int, until: datetime) -> Email | None:
+    email = session.get(Email, email_id)
+    if email is None:
+        return None
+    email.snoozed_until = until
+    return email
+
+
+def bulk_mark_deleted(session: Session, email_ids: list[int]) -> int:
+    if not email_ids:
+        return 0
+    stmt = select(Email).where(Email.id.in_(email_ids))
+    rows = session.scalars(stmt).all()
+    now = _utcnow()
+    for row in rows:
+        row.deleted_at = now
+    return len(rows)
 
 
 def get_email_with_thread(session: Session, email_id: int) -> Email | None:
