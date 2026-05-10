@@ -32,7 +32,10 @@ class Settings(BaseSettings):
 
     # Ollama
     ollama_base_url: str = "http://127.0.0.1:11434"
-    ollama_model: str = "llama3.1:8b"
+    # llama3.2:3b is roughly 5x faster than llama3.1:8b on CPU and good
+    # enough for triage-style structured output. Override via env if you
+    # want a stronger model for translation quality.
+    ollama_model: str = "llama3.2:3b"
 
     # Optional remote providers
     anthropic_api_key: str | None = None

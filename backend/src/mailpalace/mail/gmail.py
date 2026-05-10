@@ -184,15 +184,16 @@ class GmailSource:
                 page = (
                     self._service.users()
                     .messages()
-                    .list(userId="me", q="newer_than:30d", maxResults=100, pageToken=page_token)
+                    .list(userId="me", q="newer_than:7d", maxResults=50, pageToken=page_token)
                     .execute()
                 )
                 for entry in page.get("messages", []):
                     message_ids.append((entry["id"], entry["threadId"]))
                 seen += len(page.get("messages", []))
                 page_token = page.get("nextPageToken")
-                # Cap initial backfill so the very first sync stays bounded.
-                if page_token is None or seen >= 250:
+                # Cap initial backfill so the first sync finishes in minutes,
+                # not hours. v0.2 backfills the rest in a low-priority queue.
+                if page_token is None or seen >= 50:
                     break
 
         # De-dupe in case history surfaced the same message twice.

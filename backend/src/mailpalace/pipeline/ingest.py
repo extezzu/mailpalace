@@ -83,13 +83,21 @@ async def ingest_account(account_id: int) -> tuple[int, int]:
     finally:
         await source.close()
 
-    # Triage every new email through the active LLM provider.
-    for email_id in new_email_ids:
-        try:
-            await triage_email(email_id)
-        except Exception:
-            logger.exception("triage failed for email %d", email_id)
+    # Triage every new email through the active LLM provider. We run two
+    # in flight so a stalled call doesn't block the whole queue, but stay
+    # below Ollama's natural CPU contention point on a single host.
+    import asyncio as _asyncio
 
+    semaphore = _asyncio.Semaphore(2)
+
+    async def _bounded(eid: int) -> None:
+        async with semaphore:
+            try:
+                await triage_email(eid)
+            except Exception:
+                logger.exception("triage failed for email %d", eid)
+
+    await _asyncio.gather(*(_bounded(eid) for eid in new_email_ids))
     return new_count, error_count
 
 
