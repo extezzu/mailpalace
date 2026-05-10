@@ -2,9 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { Archive, Clock, MoreHorizontal, Send, Sparkles } from "lucide-react";
+import { Archive, Clock, Loader2, MoreHorizontal, Send, Sparkles } from "lucide-react";
 import type { EmailListItem } from "@/lib/types";
 import { avatarBg, formatRelativeTime, senderInitials } from "@/lib/utils";
+
+export interface SendableAccount {
+  id: number;
+  email_address: string;
+  kind: "gmail" | "imap";
+}
 
 interface Props {
   email: EmailListItem;
@@ -12,6 +18,8 @@ interface Props {
   bodyHtml?: string | null;
   /** Reply text the user previously sent for this email, if any. */
   userReply?: string | null;
+  /** Every connected mailbox the user can send from. */
+  accounts: SendableAccount[];
   onMarkRepliedSent?: (replyBody: string) => void;
 }
 
@@ -22,37 +30,75 @@ interface DraftState {
   meta: { provider: string; language: string } | null;
 }
 
-const INITIAL_DRAFT: DraftState = { body: "", loading: false, error: null, meta: null };
+interface SendState {
+  status: "idle" | "sending" | "sent" | "error";
+  message: string | null;
+}
 
-export function ThreadViewer({ email, body, bodyHtml, userReply, onMarkRepliedSent }: Props) {
+const INITIAL_DRAFT: DraftState = { body: "", loading: false, error: null, meta: null };
+const INITIAL_SEND: SendState = { status: "idle", message: null };
+
+export function ThreadViewer({
+  email,
+  body,
+  bodyHtml,
+  userReply,
+  accounts,
+  onMarkRepliedSent,
+}: Props) {
   const [draft, setDraft] = useState<DraftState>(INITIAL_DRAFT);
   const [reply, setReply] = useState("");
-  const [sendNotice, setSendNotice] = useState<string | null>(null);
+  const [send, setSend] = useState<SendState>(INITIAL_SEND);
+  // Default the From-account to the mailbox the email arrived in so a
+  // reply never accidentally goes out from the wrong identity.
+  const [fromAccountId, setFromAccountId] = useState<number>(email.account_id);
 
   const isSent = Boolean(userReply);
+  const fromAccount = accounts.find((a) => a.id === fromAccountId) ?? accounts[0];
 
-  // Reset reply text when the user clicks a different email.
+  // Reset state when the user clicks a different email.
   useEffect(() => {
     setDraft(INITIAL_DRAFT);
     setReply("");
-    setSendNotice(null);
-  }, [email.id]);
+    setSend(INITIAL_SEND);
+    setFromAccountId(email.account_id);
+  }, [email.id, email.account_id]);
 
   async function handleSend() {
     const trimmed = reply.trim();
     if (!trimmed) {
-      setSendNotice("Empty reply. Type or generate a draft before sending.");
+      setSend({ status: "error", message: "Empty reply. Type or generate a draft first." });
       return;
     }
-    // Real outbound delivery via gmail.modify ships in v0.1. For v0 we
-    // persist the "this email was replied to" flag on the backend and keep
-    // the reply text on the client so the Sent folder can render it.
-    onMarkRepliedSent?.(trimmed);
-    setSendNotice("Reply queued. Real send ships in v0.1; this thread moved to Sent.");
+    if (!fromAccount) {
+      setSend({ status: "error", message: "No account is available to send from." });
+      return;
+    }
+    setSend({ status: "sending", message: null });
     try {
-      await fetch(api(`/api/email/${email.id}/mark_replied`), { method: "POST" });
-    } catch {
-      /* offline-tolerant; the local state already moved the email */
+      const resp = await fetch(api(`/api/email/${email.id}/send`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          body_text: trimmed,
+          from_account_id: fromAccountId,
+        }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        const detail = (data && typeof data.detail === "string" && data.detail) || `HTTP ${resp.status}`;
+        throw new Error(detail);
+      }
+      setSend({
+        status: "sent",
+        message: `Sent from ${fromAccount.email_address}.`,
+      });
+      // Move the row to Sent locally so the inbox view updates without
+      // waiting on the next /api/inbox poll.
+      onMarkRepliedSent?.(trimmed);
+    } catch (exc) {
+      const message = exc instanceof Error ? exc.message : String(exc);
+      setSend({ status: "error", message });
     }
   }
 
@@ -177,20 +223,27 @@ export function ThreadViewer({ email, body, bodyHtml, userReply, onMarkRepliedSe
 
       <div className="border-t border-border bg-surface p-4">
         <div className="rounded-lg border border-border bg-surface-elevated focus-within:border-accent">
-          {/* Account picker. v0 ships with a single connected mailbox so the
-              "From" row is read-only; v0.1 promotes this to a real select that
-              lists every authenticated account and remembers the choice
-              per-thread. The default is always the account the email
-              arrived to so a reply never goes from the wrong sender by
-              accident. */}
           <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-small text-text-secondary">
             <span className="font-mono text-caption uppercase tracking-wider text-text-tertiary">
               From
             </span>
-            <span className="truncate">demo@mailpalace.local</span>
-            <span className="ml-auto font-mono text-caption text-text-tertiary">
-              v0.1: switch account
-            </span>
+            {accounts.length > 1 ? (
+              <select
+                value={fromAccountId}
+                onChange={(event) => setFromAccountId(Number(event.target.value))}
+                className="flex-1 min-w-0 truncate bg-transparent text-text-primary outline-none focus:outline-none"
+              >
+                {accounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.email_address} ({account.kind.toUpperCase()})
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span className="truncate text-text-primary">
+                {fromAccount?.email_address ?? "(no account connected)"}
+              </span>
+            )}
           </div>
           <textarea
             placeholder={isSent ? "This thread is in Sent. Write a follow-up..." : "Write a reply..."}
@@ -210,9 +263,19 @@ export function ThreadViewer({ email, body, bodyHtml, userReply, onMarkRepliedSe
               Generated by {draft.meta.provider} in {draft.meta.language}
             </div>
           )}
-          {sendNotice && (
-            <div className="border-t border-border px-3 py-2 text-small text-text-secondary">
-              {sendNotice}
+          {send.status !== "idle" && send.message && (
+            <div
+              className="border-t border-border px-3 py-2 text-small"
+              style={{
+                color:
+                  send.status === "error"
+                    ? "rgb(var(--urgent))"
+                    : send.status === "sent"
+                      ? "rgb(var(--accent))"
+                      : "rgb(var(--text-secondary))",
+              }}
+            >
+              {send.message}
             </div>
           )}
           <div className="flex items-center justify-end gap-2 border-t border-border px-3 py-2">
@@ -229,12 +292,17 @@ export function ThreadViewer({ email, body, bodyHtml, userReply, onMarkRepliedSe
             <button
               type="button"
               onClick={handleSend}
-              className="inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-small font-medium text-surface hover:opacity-90"
+              disabled={send.status === "sending" || !fromAccount}
+              className="inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-small font-medium text-surface hover:opacity-90 disabled:cursor-wait disabled:opacity-60"
               style={{ backgroundColor: "rgb(var(--accent))" }}
               title="Send the reply"
             >
-              <Send className="h-3.5 w-3.5" />
-              Send
+              {send.status === "sending" ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Send className="h-3.5 w-3.5" />
+              )}
+              {send.status === "sending" ? "Sending…" : "Send"}
             </button>
           </div>
         </div>

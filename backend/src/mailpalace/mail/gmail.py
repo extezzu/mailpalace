@@ -227,3 +227,48 @@ class GmailSource:
             )
         except HttpError as exc:
             logger.warning("delete_remote failed for %s: %s", provider_msg_id, exc)
+
+    async def send_message(
+        self,
+        *,
+        to: list[str],
+        subject: str,
+        body_text: str,
+        in_reply_to: str | None = None,
+        references: str | None = None,
+        thread_id: str | None = None,
+    ) -> dict:
+        """Send a plain-text RFC822 message via users.messages.send.
+
+        Gmail handles all the deliverability mechanics (DKIM/SPF, From
+        address, message-id) so we only have to encode a minimal RFC822
+        envelope. ``thread_id`` keeps the reply attached to the source
+        thread on the Gmail side; without it the reply opens a brand
+        new thread even when the headers say otherwise.
+        """
+        if self._service is None:
+            await self.connect()
+        assert self._service is not None
+
+        from email.message import EmailMessage
+
+        msg = EmailMessage()
+        msg["To"] = ", ".join(to)
+        msg["Subject"] = subject
+        if in_reply_to:
+            msg["In-Reply-To"] = in_reply_to
+            msg["References"] = references or in_reply_to
+        msg.set_content(body_text)
+
+        raw_b64 = base64.urlsafe_b64encode(msg.as_bytes()).decode("ascii")
+        body: dict = {"raw": raw_b64}
+        if thread_id:
+            body["threadId"] = thread_id
+
+        return with_gmail_retry(
+            lambda: self._service.users()
+            .messages()
+            .send(userId="me", body=body)
+            .execute(),
+            label="messages.send",
+        )

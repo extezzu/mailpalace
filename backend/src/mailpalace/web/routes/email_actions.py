@@ -101,6 +101,121 @@ async def mark_replied(
     return {"id": row.id, "replied_at": row.replied_at.isoformat() if row.replied_at else None}
 
 
+class SendRequest(BaseModel):
+    body_text: str
+    from_account_id: int | None = None  # null = use the email's own account
+
+
+@router.post(
+    "/email/{email_id}/send",
+    summary="Send a real reply through the upstream provider",
+    description=(
+        "Builds an RFC822 reply (To = original From, Subject = 'Re: …', "
+        "In-Reply-To header set) and sends it via the chosen account. "
+        "Gmail accounts use users.messages.send under the gmail.modify "
+        "scope. IMAP-only accounts return 501 until the SMTP layer "
+        "ships in the next iteration. On success we mark the source "
+        "email as replied so it leaves the inbox immediately."
+    ),
+)
+async def send_email_reply(
+    email_id: int,
+    body: SendRequest,
+    session: Session = SessionDep,
+) -> dict:
+    """Send a reply and stamp the original as replied."""
+    from mailpalace.db.engine import session_scope as _scope
+    from mailpalace.db.schema import Account, Email
+    from mailpalace.mail.gmail import GmailSource
+
+    if not body.body_text or not body.body_text.strip():
+        raise HTTPException(status_code=400, detail="Reply body is empty.")
+
+    # Snapshot every value we need from the DB before doing any I/O so
+    # we never hold a session open across a network call.
+    with _scope() as _s:
+        email_row = _s.get(Email, email_id)
+        if email_row is None:
+            raise HTTPException(status_code=404, detail="Email not found")
+        target_account_id = body.from_account_id or email_row.account_id
+        from_account = _s.get(Account, target_account_id)
+        if from_account is None:
+            raise HTTPException(status_code=400, detail="Sending account not found")
+        if not from_account.is_active:
+            raise HTTPException(status_code=400, detail="Sending account is disabled")
+
+        original_subject = email_row.subject or ""
+        original_from = email_row.from_email
+        rfc822_msg_id = email_row.rfc822_message_id
+        provider_thread_id_for_gmail = (
+            email_row.provider_msg_id.split(":", 1)[0]
+            if from_account.kind == "imap"
+            else None
+        )
+        # The Gmail thread id is stored on the Thread row (provider_thread_id).
+        gmail_thread_id: str | None = None
+        if from_account.kind == "gmail" and email_row.thread_id is not None:
+            from mailpalace.db.schema import Thread as _Thread
+
+            thread_row = _s.get(_Thread, email_row.thread_id)
+            if thread_row is not None:
+                gmail_thread_id = thread_row.provider_thread_id
+
+        sender_kind = from_account.kind
+        sender_email = from_account.email_address
+
+    if sender_kind != "gmail":
+        # SMTP for IMAP accounts is the next chunk of work — until it
+        # ships we'd rather fail loudly than silently look like we sent
+        # something. Surface a clear 501 so the UI can explain.
+        raise HTTPException(
+            status_code=501,
+            detail=(
+                f"Sending from {sender_email} (IMAP) is not implemented yet. "
+                "Use a Gmail account for now or wait for the SMTP layer."
+            ),
+        )
+
+    subject = original_subject
+    if not subject.lower().startswith("re:"):
+        subject = f"Re: {subject}" if subject else "Re:"
+
+    source = GmailSource(account_id=target_account_id, email_address=sender_email)
+    try:
+        await source.connect()
+        result = await source.send_message(
+            to=[original_from],
+            subject=subject,
+            body_text=body.body_text,
+            in_reply_to=rfc822_msg_id,
+            references=rfc822_msg_id,
+            thread_id=gmail_thread_id,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("send via gmail failed for email %d", email_id)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Provider rejected the send: {exc}",
+        ) from exc
+    finally:
+        await source.close()
+
+    # Stamp source as replied so the inbox hides it. Read-state on
+    # provider gets bumped in the same propagate path the manual
+    # "mark replied" button uses.
+    with _scope() as _s:
+        repo.mark_email_replied(_s, email_id)
+
+    return {
+        "id": email_id,
+        "sent": True,
+        "provider_message_id": result.get("id"),
+        "from_account_id": target_account_id,
+    }
+
+
 @router.post("/email/{email_id}/delete", summary="Move email to Trash")
 async def delete_email(
     email_id: int, background: BackgroundTasks, session: Session = SessionDep

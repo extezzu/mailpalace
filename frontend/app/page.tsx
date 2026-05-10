@@ -67,14 +67,19 @@ export default function HomePage() {
   const [summaryLocale, setSummaryLocale] = useState<string>("en");
   const [retriaging, setRetriaging] = useState(false);
   const [retriageProgress, setRetriageProgress] = useState<{ current: number; total: number } | null>(null);
-  const [accounts, setAccounts] = useState<{ id: number; email_address: string }[]>([]);
+  const [accounts, setAccounts] = useState<
+    { id: number; email_address: string; kind: "gmail" | "imap" }[]
+  >([]);
   const [accountsLoaded, setAccountsLoaded] = useState(false);
 
-  async function reloadAccounts(): Promise<{ id: number; email_address: string }[]> {
+  async function reloadAccounts(): Promise<
+    { id: number; email_address: string; kind: "gmail" | "imap" }[]
+  > {
     try {
       const resp = await fetch(api("/api/accounts"));
       if (!resp.ok) return [];
-      const list: { id: number; email_address: string }[] = await resp.json();
+      const list: { id: number; email_address: string; kind: "gmail" | "imap" }[] =
+        await resp.json();
       setAccounts(list);
       if (list.length > 0) setAccountEmail(list[0].email_address);
       return list;
@@ -499,6 +504,7 @@ export default function HomePage() {
                       : null
                   }
                   userReply={flags[selected.id]?.reply ?? null}
+                  accounts={accounts}
                   onMarkRepliedSent={(replyBody) => markSent(selected.id, replyBody)}
                 />
               </div>
@@ -524,6 +530,7 @@ export default function HomePage() {
                   : null
               }
               userReply={flags[selected.id]?.reply ?? null}
+              accounts={accounts}
               onMarkRepliedSent={(replyBody) => markSent(selected.id, replyBody)}
             />
           </section>
