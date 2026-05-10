@@ -142,25 +142,30 @@ async def _gmail_oauth_worker() -> None:
                     session.flush()
                     account_id = row.id
             # The account row is in the DB and the refresh token is in the
-            # keyring, so the user is technically logged in already. We
-            # mark phase=done immediately and let the heavy first-ingest
-            # run as a detached task. The wizard exits in ~1s instead of
-            # blocking 2-3 minutes on the synchronous Gmail backfill, and
-            # the dashboard's existing /api/inbox poll picks up rows as
-            # they land.
+            # keyring, so the user is technically logged in already. Mark
+            # phase=done immediately and run the heavy first-ingest in a
+            # SEPARATE OS thread with its own event loop. We can't use
+            # asyncio.create_task because ingest_account performs
+            # synchronous Gmail HTTP calls (googleapiclient is sync) that
+            # would block the FastAPI event loop and freeze the wizard's
+            # /api/accounts poll for the entire 2-3 minute backfill.
             _set(
                 phase="done",
                 account_id=account_id,
                 finished_at=datetime.now(tz=timezone.utc).isoformat(),
             )
 
-            async def _detached_ingest() -> None:
+            import threading as _threading
+
+            def _thread_target(aid: int = account_id) -> None:
                 try:
-                    await ingest_account(account_id)
+                    asyncio.run(ingest_account(aid))
                 except Exception:
                     logger.exception("background ingest after oauth failed")
 
-            asyncio.create_task(_detached_ingest())
+            _threading.Thread(
+                target=_thread_target, name=f"oauth-ingest-{account_id}", daemon=True
+            ).start()
             return
         except Exception as exc:
             logger.exception("Gmail OAuth worker failed")

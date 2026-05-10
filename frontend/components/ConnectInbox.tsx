@@ -70,7 +70,7 @@ export function ConnectInbox({ onConnected }: Props) {
         /* ignore */
       }
     }
-    const id = window.setInterval(tick, 2000);
+    const id = window.setInterval(tick, 500);
     return () => {
       cancelled = true;
       window.clearInterval(id);
@@ -142,7 +142,9 @@ export function ConnectInbox({ onConnected }: Props) {
       // Poll for either a) the account row appearing in /api/accounts (we
       // can hide the wizard the instant the row exists, even before the
       // first ingest finishes), or b) the OAuth status flipping to error.
-      const POLL_MS = 1500;
+      // 250ms keeps wizard-exit latency low without flooding the backend;
+      // the worker flips phase=done as soon as the keyring write returns.
+      const POLL_MS = 250;
       const TIMEOUT_MS = 10 * 60 * 1000;
       const startedAt = Date.now();
       // eslint-disable-next-line no-constant-condition
