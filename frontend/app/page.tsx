@@ -453,6 +453,7 @@ export default function HomePage() {
           sentCount={sentCount}
           spamCount={spamCount}
           accountEmail={accountEmail}
+          accountIds={accounts.map((a) => a.id)}
           onSelect={setActiveFilter}
           onSettings={() => router.push("/settings")}
         />

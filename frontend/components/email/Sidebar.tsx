@@ -1,15 +1,19 @@
 "use client";
 
+import { useState } from "react";
 import {
   Inbox,
+  Loader2,
   Newspaper,
   OctagonAlert,
+  RefreshCw,
   Send,
   Settings,
   Sparkles,
   Trash2,
   type LucideIcon,
 } from "lucide-react";
+import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { Filter } from "./FilterBar";
 
@@ -31,6 +35,8 @@ interface Props {
   accountEmail: string;
   /** Profile picture URL; falls back to the bundled fallback avatar. */
   accountAvatar?: string | null;
+  /** Numeric account ids to force-refresh when the user clicks Sync. */
+  accountIds: number[];
 }
 
 export function Sidebar({
@@ -43,7 +49,40 @@ export function Sidebar({
   onSettings,
   accountEmail,
   accountAvatar,
+  accountIds,
 }: Props) {
+  const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+
+  async function syncNow() {
+    if (syncing || accountIds.length === 0) return;
+    setSyncing(true);
+    setSyncError(null);
+    try {
+      // Fire all account syncs in parallel; the backend already runs
+      // each one in its own thread, so we just wait for the slowest.
+      const results = await Promise.allSettled(
+        accountIds.map((id) =>
+          fetch(api(`/api/accounts/${id}/sync`), { method: "POST" }).then((r) => {
+            if (!r.ok) throw new Error(`acc ${id}: HTTP ${r.status}`);
+            return r.json();
+          }),
+        ),
+      );
+      const firstError = results.find((r) => r.status === "rejected") as
+        | PromiseRejectedResult
+        | undefined;
+      if (firstError) {
+        const reason = firstError.reason;
+        throw reason instanceof Error ? reason : new Error(String(reason));
+      }
+    } catch (exc) {
+      setSyncError(exc instanceof Error ? exc.message : String(exc));
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   const folders: NavItem[] = [
     { icon: Inbox, label: "Inbox", filter: "inbox", count: counts.inbox },
     { icon: Send, label: "Sent", filter: "sent", count: sentCount },
@@ -88,7 +127,24 @@ export function Sidebar({
         ))}
       </nav>
 
-      <div className="border-t border-border px-2 py-2">
+      <div className="flex flex-col gap-1 border-t border-border px-2 py-2">
+        <button
+          type="button"
+          onClick={syncNow}
+          disabled={syncing || accountIds.length === 0}
+          className={cn(
+            "flex w-full items-center gap-2 rounded px-2 py-1.5 text-body text-text-secondary",
+            "hover:bg-surface hover:text-text-primary",
+            "disabled:cursor-wait disabled:opacity-60",
+          )}
+        >
+          {syncing ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <RefreshCw className="h-4 w-4" />
+          )}
+          <span className="flex-1 text-left">{syncing ? "Syncing…" : "Sync now"}</span>
+        </button>
         <button
           type="button"
           onClick={onSettings}
@@ -100,6 +156,15 @@ export function Sidebar({
           <Settings className="h-4 w-4" />
           <span className="flex-1 text-left">Settings</span>
         </button>
+        {syncError && (
+          <span
+            className="px-2 text-caption"
+            style={{ color: "rgb(var(--urgent))" }}
+            title={syncError}
+          >
+            Sync failed: {syncError.slice(0, 60)}
+          </span>
+        )}
       </div>
     </aside>
   );

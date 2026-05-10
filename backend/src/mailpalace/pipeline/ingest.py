@@ -72,6 +72,39 @@ async def ingest_account(account_id: int) -> tuple[int, int]:
             except Exception:
                 logger.exception("failed to persist email")
                 error_count += 1
+
+        # Apply provider-side label/delete changes the source picked up
+        # while walking history.list. Sources that don't expose these
+        # attributes (e.g. IMAP, where label semantics are different)
+        # simply skip this block.
+        label_updates = getattr(source, "pending_label_updates", None)
+        deletions = getattr(source, "pending_deletions", None)
+        if label_updates or deletions:
+            from mailpalace.db.repo import (
+                apply_remote_label_change,
+                mark_email_deleted_by_provider_id,
+            )
+
+            with session_scope() as _s:
+                for provider_msg_id, labels in (label_updates or {}).items():
+                    apply_remote_label_change(
+                        _s,
+                        account_id=account_id,
+                        provider_msg_id=provider_msg_id,
+                        new_labels=labels,
+                    )
+                for provider_msg_id in deletions or []:
+                    mark_email_deleted_by_provider_id(
+                        _s,
+                        account_id=account_id,
+                        provider_msg_id=provider_msg_id,
+                    )
+            # Reset the source's side-channel for the next tick.
+            if isinstance(label_updates, dict):
+                label_updates.clear()
+            if isinstance(deletions, list):
+                deletions.clear()
+
         new_state = await source.new_sync_state()
         with session_scope() as session:
             row = session.get(Account, account_id)

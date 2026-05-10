@@ -45,6 +45,12 @@ class GmailSource:
         self._email = email_address
         self._service = None
         self._latest_history_id: str | None = None
+        # Side channel for state changes the history.list walk discovered
+        # since the last sync_state. ingest_account drains these after
+        # fetch_since so a label flip or delete on the Gmail side
+        # propagates into our local DB without a full re-fetch.
+        self.pending_label_updates: dict[str, list[str]] = {}
+        self.pending_deletions: list[str] = []
 
     async def connect(self) -> None:
         creds = gmail_oauth.load_credentials(self._email)
@@ -86,6 +92,28 @@ class GmailSource:
                             tid = msg.get("threadId")
                             if mid and tid:
                                 message_ids.append((mid, tid))
+                        # `messagesDeleted` fires when a message is purged
+                        # for good (not when moved to Trash — that is a
+                        # labelsAdded TRASH event). Track both so the local
+                        # row disappears either way.
+                        for removed in record.get("messagesDeleted", []):
+                            msg = removed.get("message") or {}
+                            mid = msg.get("id")
+                            if mid:
+                                self.pending_deletions.append(mid)
+                        # labelsAdded / labelsRemoved both arrive with the
+                        # message's CURRENT label set, so we capture the
+                        # latest snapshot per message id and let the DB
+                        # apply it once after the history walk finishes.
+                        for change in record.get("labelsAdded", []) + record.get(
+                            "labelsRemoved", []
+                        ):
+                            msg = change.get("message") or {}
+                            mid = msg.get("id")
+                            if mid:
+                                self.pending_label_updates[mid] = list(
+                                    msg.get("labelIds", [])
+                                )
                     self._latest_history_id = str(history.get("historyId", self._latest_history_id))
                     page_token = history.get("nextPageToken")
                     if not page_token:

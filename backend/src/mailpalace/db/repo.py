@@ -124,6 +124,59 @@ def mark_email_replied(session: Session, email_id: int) -> Email | None:
     return email
 
 
+def apply_remote_label_change(
+    session: Session,
+    *,
+    account_id: int,
+    provider_msg_id: str,
+    new_labels: list[str],
+) -> Email | None:
+    """Sync provider-side label edits (archive in Gmail UI, mark read, …).
+
+    Updates ``provider_labels`` plus the derived ``is_unread`` /
+    ``is_starred`` flags. If Gmail moved the message to ``TRASH`` we
+    stamp ``deleted_at`` so the local Inbox view hides it without
+    waiting for an explicit delete event.
+    """
+    row = session.scalar(
+        select(Email).where(
+            Email.account_id == account_id,
+            Email.provider_msg_id == provider_msg_id,
+        )
+    )
+    if row is None:
+        return None
+    row.provider_labels = list(new_labels)
+    row.is_unread = "UNREAD" in new_labels
+    row.is_starred = "STARRED" in new_labels
+    if "TRASH" in new_labels and row.deleted_at is None:
+        row.deleted_at = _utcnow().replace(tzinfo=None)
+    elif "TRASH" not in new_labels and row.deleted_at is not None:
+        # User dragged the message back out of Trash on the Gmail side.
+        row.deleted_at = None
+    return row
+
+
+def mark_email_deleted_by_provider_id(
+    session: Session,
+    *,
+    account_id: int,
+    provider_msg_id: str,
+) -> Email | None:
+    """Soft-delete a message we no longer have on the upstream provider."""
+    row = session.scalar(
+        select(Email).where(
+            Email.account_id == account_id,
+            Email.provider_msg_id == provider_msg_id,
+        )
+    )
+    if row is None:
+        return None
+    if row.deleted_at is None:
+        row.deleted_at = _utcnow().replace(tzinfo=None)
+    return row
+
+
 def mark_email_deleted(session: Session, email_id: int) -> Email | None:
     email = session.get(Email, email_id)
     if email is None:
