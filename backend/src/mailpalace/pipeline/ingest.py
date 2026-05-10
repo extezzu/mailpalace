@@ -83,12 +83,13 @@ async def ingest_account(account_id: int) -> tuple[int, int]:
     finally:
         await source.close()
 
-    # Triage every new email through the active LLM provider. We run two
-    # in flight so a stalled call doesn't block the whole queue, but stay
-    # below Ollama's natural CPU contention point on a single host.
+    # Triage every new email through the active LLM provider. Ollama with
+    # OLLAMA_NUM_PARALLEL configured + a small (1B) model on a consumer
+    # GPU comfortably runs four in flight; the semaphore keeps us from
+    # firing fifty fetches at once and starving the dashboard's polling.
     import asyncio as _asyncio
 
-    semaphore = _asyncio.Semaphore(2)
+    semaphore = _asyncio.Semaphore(4)
 
     async def _bounded(eid: int) -> None:
         async with semaphore:
