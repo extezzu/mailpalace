@@ -83,13 +83,15 @@ async def ingest_account(account_id: int) -> tuple[int, int]:
     finally:
         await source.close()
 
-    # Triage every new email through the active LLM provider. Ollama with
-    # OLLAMA_NUM_PARALLEL configured + a small (1B) model on a consumer
-    # GPU comfortably runs four in flight; the semaphore keeps us from
-    # firing fifty fetches at once and starving the dashboard's polling.
+    # Triage stays bounded so the first sync's hundreds of emails do not
+    # block the inbox view for minutes. We triage at most the 50 newest
+    # rows in the current ingest (where the user actually looks); the
+    # background poller revisits older rows in batches on subsequent
+    # ticks via list_pending_triage.
     import asyncio as _asyncio
 
     semaphore = _asyncio.Semaphore(4)
+    priority_ids = new_email_ids[:50]
 
     async def _bounded(eid: int) -> None:
         async with semaphore:
@@ -98,7 +100,18 @@ async def ingest_account(account_id: int) -> tuple[int, int]:
             except Exception:
                 logger.exception("triage failed for email %d", eid)
 
-    await _asyncio.gather(*(_bounded(eid) for eid in new_email_ids))
+    await _asyncio.gather(*(_bounded(eid) for eid in priority_ids))
+
+    if len(new_email_ids) > 50:
+        # Drop the rest into a fire-and-forget task so ingest_account
+        # returns quickly and the poll loop can keep moving.
+        backlog = new_email_ids[50:]
+
+        async def _drain_backlog() -> None:
+            await _asyncio.gather(*(_bounded(eid) for eid in backlog))
+
+        _asyncio.create_task(_drain_backlog())
+
     return new_count, error_count
 
 

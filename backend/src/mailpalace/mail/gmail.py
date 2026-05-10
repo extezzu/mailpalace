@@ -196,9 +196,12 @@ class GmailSource:
 
         if not sync_state:
             # Gmail's `in:anywhere` covers Spam/Trash and the inbox tabs but
-            # not Sent, and `q="newer_than:..."` defaults to inbox-only. Run
-            # two queries and merge so Sent shows up in the first ingest.
-            for q in ("in:anywhere newer_than:60d", "in:sent newer_than:60d"):
+            # not Sent, so we run two queries and merge. No time filter so
+            # the first ingest matches what the user sees under "All mail"
+            # in Gmail. Capped at 2000 per query so 10k+ Gmail accounts
+            # still finish a first sync in minutes; the rest streams in via
+            # the history API on subsequent ticks.
+            for q in ("in:anywhere", "in:sent"):
                 page_token = None
                 seen = 0
                 while True:
@@ -217,7 +220,7 @@ class GmailSource:
                         message_ids.append((entry["id"], entry["threadId"]))
                     seen += len(page.get("messages", []))
                     page_token = page.get("nextPageToken")
-                    if page_token is None or seen >= 500:
+                    if page_token is None or seen >= 2000:
                         break
 
         # De-dupe in case history surfaced the same message twice.
