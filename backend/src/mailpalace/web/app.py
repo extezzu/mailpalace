@@ -64,6 +64,17 @@ def create_app() -> FastAPI:
     async def health() -> dict:
         return {"status": "ok", "version": "0.1.0"}
 
+    # Build/process identifier the dashboard polls so a hot-reload + bundle
+    # change reaches the user's browser without a manual refresh.
+    import os as _os
+    import time as _time
+
+    process_token = f"{_os.getpid()}-{int(_time.time())}"
+
+    @app.get("/api/version")
+    async def version() -> dict:
+        return {"process_token": process_token}
+
     return app
 
 
