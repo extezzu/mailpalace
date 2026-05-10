@@ -348,6 +348,44 @@ export default function HomePage() {
   }
 
 
+  // Poll the inbox while at least one account is connected, so freshly
+  // ingested emails appear without a manual refresh. Stops when there
+  // are no accounts (the wizard takes over) and when the page unmounts.
+  useEffect(() => {
+    if (accounts.length === 0) return;
+    let cancelled = false;
+    async function tick() {
+      try {
+        const fresh = await fetchInbox();
+        if (!cancelled) {
+          setEmails(fresh);
+          setFlags((prev) => {
+            const next: Record<number, RowFlags> = { ...prev };
+            for (const email of fresh) {
+              if (next[email.id]) continue;
+              next[email.id] = {
+                read: !email.is_unread,
+                snoozed: false,
+                deleted: false,
+                sent: false,
+                reply: null,
+              };
+            }
+            return next;
+          });
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    tick();
+    const id = window.setInterval(tick, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [accounts.length]);
+
   // First-run wizard. We wait until we've actually heard from /api/accounts
   // so we don't flash the wizard during the initial load.
   if (accountsLoaded && accounts.length === 0) {
