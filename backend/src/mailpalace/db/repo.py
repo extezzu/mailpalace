@@ -61,6 +61,10 @@ def list_inbox(
         .limit(limit)
     )
     if folder == "inbox":
+        # Hide rows the user already moved (replied/deleted/snoozed) AND
+        # rows Gmail itself moved out of the primary inbox (Spam, Sent,
+        # Trash labels). JSON-array containment via SQLite's json_each
+        # is not portable, so we apply the label filter in Python below.
         stmt = stmt.where(
             Email.replied_at.is_(None),
             Email.deleted_at.is_(None),
@@ -70,6 +74,8 @@ def list_inbox(
         stmt = stmt.where(Email.replied_at.is_not(None))
     elif folder == "trash":
         stmt = stmt.where(Email.deleted_at.is_not(None))
+    elif folder == "spam":
+        stmt = stmt.where(Email.replied_at.is_(None), Email.deleted_at.is_(None))
     if account_id is not None:
         stmt = stmt.where(Email.account_id == account_id)
     if unread_only:
@@ -85,7 +91,28 @@ def list_inbox(
     if query:
         like = f"%{query}%"
         stmt = stmt.where((Email.subject.ilike(like)) | (Email.snippet.ilike(like)))
-    return list(session.scalars(stmt).unique().all())
+    rows = list(session.scalars(stmt).unique().all())
+
+    # Provider-label-based folder routing happens in Python because SQLite
+    # JSON containment is non-portable. The set is small so we filter in-
+    # memory after the SQL pass.
+    if folder == "inbox":
+        rows = [r for r in rows if not _is_remote_excluded(r.provider_labels or [])]
+    elif folder == "spam":
+        rows = [r for r in rows if "SPAM" in (r.provider_labels or [])]
+    elif folder == "sent":
+        # Either we replied locally or Gmail tagged it SENT.
+        rows = [
+            r
+            for r in rows
+            if r.replied_at is not None or "SENT" in (r.provider_labels or [])
+        ]
+    return rows
+
+
+def _is_remote_excluded(labels: list[str]) -> bool:
+    """True when Gmail moved this row out of the primary inbox view."""
+    return any(lbl in labels for lbl in ("SPAM", "TRASH", "SENT"))
 
 
 def mark_email_replied(session: Session, email_id: int) -> Email | None:

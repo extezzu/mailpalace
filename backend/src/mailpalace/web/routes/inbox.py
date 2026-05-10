@@ -37,6 +37,7 @@ class EmailListItem(BaseModel):
     is_unread: bool
     is_starred: bool
     has_attachments: bool
+    provider_labels: list[str] = []
     ai: AiBlock | None = None
 
 
@@ -109,6 +110,7 @@ def get_inbox(
                 is_unread=row.is_unread,
                 is_starred=row.is_starred,
                 has_attachments=row.has_attachments,
+                provider_labels=list(row.provider_labels or []),
                 ai=ai_block,
             )
         )

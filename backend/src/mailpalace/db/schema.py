@@ -85,6 +85,10 @@ class Email(Base):
     is_unread: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_starred: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     has_attachments: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Labels coming from the upstream provider (Gmail label ids, IMAP
+    # folder names). Drives the inbox/spam/sent split so emails Gmail
+    # categorised as Spam don't pollute the user's primary inbox.
+    provider_labels: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     # When set, the user replied to (or sent) this email. Inbox queries hide
     # these rows; the Sent folder reads them.
     replied_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

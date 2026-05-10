@@ -26,6 +26,10 @@ class NormalizedEmail(BaseModel):
     is_unread: bool = True
     is_starred: bool = False
     has_attachments: bool = False
+    # Provider-side labels: Gmail returns ["INBOX", "CATEGORY_PROMOTIONS",
+    # "SPAM", "SENT", "TRASH", ...]; IMAP returns folder names. Used by
+    # the inbox-vs-spam-vs-sent routing in repo.list_inbox.
+    labels: list[str] = []
 
 
 @runtime_checkable

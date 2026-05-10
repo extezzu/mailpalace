@@ -152,6 +152,7 @@ def _persist_email(account_id: int, normalized: NormalizedEmail) -> int | None:
             is_unread=normalized.is_unread,
             is_starred=normalized.is_starred,
             has_attachments=normalized.has_attachments,
+            provider_labels=list(normalized.labels),
         )
         inserted = insert_email_if_new(session, new_email)
         if inserted is None:

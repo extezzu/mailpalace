@@ -1,6 +1,15 @@
 "use client";
 
-import { Inbox, Newspaper, Send, Settings, Sparkles, Trash2, type LucideIcon } from "lucide-react";
+import {
+  Inbox,
+  Newspaper,
+  OctagonAlert,
+  Send,
+  Settings,
+  Sparkles,
+  Trash2,
+  type LucideIcon,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Filter } from "./FilterBar";
 
@@ -16,6 +25,7 @@ interface Props {
   counts: Record<Filter, number>;
   trashCount: number;
   sentCount: number;
+  spamCount: number;
   onSelect: (filter: Filter) => void;
   onSettings: () => void;
   accountEmail: string;
@@ -28,6 +38,7 @@ export function Sidebar({
   counts,
   trashCount,
   sentCount,
+  spamCount,
   onSelect,
   onSettings,
   accountEmail,
@@ -36,6 +47,7 @@ export function Sidebar({
   const folders: NavItem[] = [
     { icon: Inbox, label: "Inbox", filter: "inbox", count: counts.inbox },
     { icon: Send, label: "Sent", filter: "sent", count: sentCount },
+    { icon: OctagonAlert, label: "Spam", filter: "spam", count: spamCount },
     { icon: Trash2, label: "Trash", filter: "trash", count: trashCount },
   ];
 

@@ -46,7 +46,7 @@ function rowIsActive(flags: RowFlags | undefined): boolean {
 
 
 async function fetchInbox(): Promise<EmailListItem[]> {
-  const resp = await fetch(api("/api/inbox?folder=all&limit=200"));
+  const resp = await fetch(api("/api/inbox?folder=all&limit=500"));
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   const data = await resp.json();
   return data.emails as EmailListItem[];
@@ -158,18 +158,33 @@ export default function HomePage() {
     [liveEmails, flags],
   );
   const sentCount = useMemo(
-    () => liveEmails.filter((e) => flags[e.id]?.sent).length,
+    () =>
+      liveEmails.filter(
+        (e) => flags[e.id]?.sent || (e.provider_labels ?? []).includes("SENT"),
+      ).length,
     [liveEmails, flags],
+  );
+  const spamCount = useMemo(
+    () => liveEmails.filter((e) => (e.provider_labels ?? []).includes("SPAM")).length,
+    [liveEmails],
   );
 
   const filtered = useMemo(() => {
     const list = liveEmails.filter((email) => {
       const f = flags[email.id];
       if (!f) return false;
-      if (activeFilter === "trash") return f.deleted;
-      if (activeFilter === "sent") return f.sent;
+      const labels = email.provider_labels ?? [];
+      if (activeFilter === "trash") return f.deleted || labels.includes("TRASH");
+      if (activeFilter === "spam") return labels.includes("SPAM");
+      if (activeFilter === "sent") {
+        return f.sent || labels.includes("SENT");
+      }
       // Every remaining folder is "live inbox": skip rows that left it.
       if (!rowIsActive(f)) return false;
+      // Hide rows Gmail itself moved out of the primary inbox view.
+      if (labels.includes("SPAM") || labels.includes("TRASH") || labels.includes("SENT")) {
+        return false;
+      }
       const cls = (email.ai?.classification ?? "other") as Classification;
       if (activeFilter === "inbox") {
         return !NEWSLETTERS.includes(cls);
@@ -393,6 +408,7 @@ export default function HomePage() {
           counts={counts}
           trashCount={trashCount}
           sentCount={sentCount}
+          spamCount={spamCount}
           accountEmail={accountEmail}
           onSelect={setActiveFilter}
           onSettings={() => router.push("/settings")}

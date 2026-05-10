@@ -105,7 +105,9 @@ def _has_attachments(msg) -> bool:
     return any(part.get_filename() for part in msg.walk())
 
 
-def _normalise(message_id: str, thread_id: str, raw_b64: str) -> NormalizedEmail:
+def _normalise(
+    message_id: str, thread_id: str, raw_b64: str, labels: list[str] | None = None
+) -> NormalizedEmail:
     raw_bytes = base64.urlsafe_b64decode(raw_b64.encode("ascii"))
     msg = message_from_bytes(raw_bytes)
     from_addresses = _parse_addresses(msg.get("From"))
@@ -118,6 +120,7 @@ def _normalise(message_id: str, thread_id: str, raw_b64: str) -> NormalizedEmail
         received_at = datetime.now(tz=timezone.utc)
     if received_at.tzinfo is not None:
         received_at = received_at.astimezone(timezone.utc).replace(tzinfo=None)
+    label_set = labels or []
     return NormalizedEmail(
         provider_msg_id=message_id,
         provider_thread_id=thread_id,
@@ -132,9 +135,10 @@ def _normalise(message_id: str, thread_id: str, raw_b64: str) -> NormalizedEmail
         body_html=html,
         received_at=received_at,
         raw_size_bytes=len(raw_bytes),
-        is_unread=True,
-        is_starred=False,
+        is_unread="UNREAD" in label_set,
+        is_starred="STARRED" in label_set,
         has_attachments=_has_attachments(msg),
+        labels=label_set,
     )
 
 
@@ -197,17 +201,22 @@ class GmailSource:
                 page = (
                     self._service.users()
                     .messages()
-                    .list(userId="me", q="newer_than:30d", maxResults=100, pageToken=page_token)
+                    .list(
+                        userId="me",
+                        q="in:anywhere newer_than:60d",
+                        maxResults=100,
+                        pageToken=page_token,
+                    )
                     .execute()
                 )
                 for entry in page.get("messages", []):
                     message_ids.append((entry["id"], entry["threadId"]))
                 seen += len(page.get("messages", []))
                 page_token = page.get("nextPageToken")
-                # Cap initial backfill at 200 messages. Remaining history
-                # ships incrementally via the historyId-based path the
-                # next time the scheduler ticks.
-                if page_token is None or seen >= 200:
+                # Cap initial backfill at 500 messages so the first ingest
+                # covers Inbox, Promotions, Spam, Sent, and Trash without
+                # pulling everything ever.
+                if page_token is None or seen >= 500:
                     break
 
         # De-dupe in case history surfaced the same message twice.
@@ -217,16 +226,27 @@ class GmailSource:
                 continue
             seen_ids.add(message_id)
             try:
+                # Two API calls per message: `raw` for the RFC822 bytes and
+                # `metadata` for the label ids. The latter is cheap and lets
+                # us preserve Gmail's INBOX / SPAM / SENT / CATEGORY_*
+                # routing on our side.
                 detail = (
                     self._service.users()
                     .messages()
                     .get(userId="me", id=message_id, format="raw")
                     .execute()
                 )
+                meta = (
+                    self._service.users()
+                    .messages()
+                    .get(userId="me", id=message_id, format="minimal")
+                    .execute()
+                )
             except HttpError as exc:
                 logger.warning("messages.get failed for %s: %s", message_id, exc)
                 continue
-            yield _normalise(message_id, thread_id, detail["raw"])
+            labels = meta.get("labelIds", [])
+            yield _normalise(message_id, thread_id, detail["raw"], labels)
 
     async def new_sync_state(self) -> str:
         if self._latest_history_id is None and self._service is not None:

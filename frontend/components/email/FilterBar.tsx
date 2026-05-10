@@ -12,12 +12,12 @@ export type Filter =
   | "inbox"
   | "sent"
   | "trash"
+  | "spam"
   | "urgent"
   | "important"
   | "newsletter"
   | "promotion"
   | "transactional"
-  | "spam"
   | "other";
 
 export const ACTION_REQUIRED: Classification[] = ["urgent", "important"];

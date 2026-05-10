@@ -31,6 +31,7 @@ export interface EmailListItem {
   is_unread: boolean;
   is_starred: boolean;
   has_attachments: boolean;
+  provider_labels?: string[];
   ai: AiBlock | null;
 }
 
