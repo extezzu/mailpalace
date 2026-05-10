@@ -32,10 +32,11 @@ class Settings(BaseSettings):
 
     # Ollama
     ollama_base_url: str = "http://127.0.0.1:11434"
-    # llama3.2:3b is roughly 5x faster than llama3.1:8b on CPU and good
-    # enough for triage-style structured output. Override via env if you
-    # want a stronger model for translation quality.
-    ollama_model: str = "llama3.2:3b"
+    # llama3.2:1b is the fastest path for structured-JSON triage on a
+    # consumer GPU; first batch of 50 finishes in well under a minute.
+    # Bump to llama3.2:3b or llama3.1:8b via env when triage quality
+    # matters more than speed (translations, long-context summary).
+    ollama_model: str = "llama3.2:1b"
 
     # Optional remote providers
     anthropic_api_key: str | None = None
