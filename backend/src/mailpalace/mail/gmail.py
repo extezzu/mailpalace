@@ -204,35 +204,46 @@ class GmailSource:
                     raise
 
         if not sync_state:
-            # Gmail's `in:anywhere` covers Spam/Trash and the inbox tabs but
-            # not Sent, so we run two queries and merge. No time filter so
-            # the first ingest matches what the user sees under "All mail"
-            # in Gmail. Capped at 2000 per query so 10k+ Gmail accounts
-            # still finish a first sync in minutes; the rest streams in via
-            # the history API on subsequent ticks.
-            for q in ("in:anywhere", "in:sent"):
-                page_token = None
-                seen = 0
-                while True:
-                    current_token = page_token
-                    page = with_gmail_retry(
-                        lambda: self._service.users()
-                        .messages()
-                        .list(
-                            userId="me",
-                            q=q,
-                            maxResults=100,
-                            pageToken=current_token,
-                        )
-                        .execute(),
-                        label=f"messages.list[{q}]",
+            # Canonical full-mailbox backfill.
+            #
+            # No `q` parameter: `in:anywhere` is documented only as covering
+            # Spam and Trash. SENT, DRAFT, and CHAT are listed as separate
+            # operators and are NOT guaranteed to be included. Omitting `q`
+            # is the documented most-permissive state.
+            # Ref: https://support.google.com/mail/answer/7190
+            #
+            # `includeSpamTrash=True`: the authoritative API parameter for
+            # SPAM/TRASH inclusion. Relying on `in:anywhere` for that is
+            # undocumented at the API level.
+            #
+            # No message-count cap: the former 2000-per-query cap silently
+            # truncated large mailboxes. Subsequent syncs use the cheap
+            # history API, so unbounded backfill is fine.
+            #
+            # `maxResults=500`: the API maximum per page; halves round trips.
+            #
+            # CHAT (legacy Hangouts) messages are NOT returned by the Gmail
+            # email API for personal accounts; that residual gap is accepted.
+            page_token: str | None = None
+            while True:
+                current_token = page_token
+                page = with_gmail_retry(
+                    lambda: self._service.users()
+                    .messages()
+                    .list(
+                        userId="me",
+                        includeSpamTrash=True,
+                        maxResults=500,
+                        pageToken=current_token,
                     )
-                    for entry in page.get("messages", []):
-                        message_ids.append((entry["id"], entry["threadId"]))
-                    seen += len(page.get("messages", []))
-                    page_token = page.get("nextPageToken")
-                    if page_token is None or seen >= 2000:
-                        break
+                    .execute(),
+                    label="messages.list",
+                )
+                for entry in page.get("messages", []):
+                    message_ids.append((entry["id"], entry["threadId"]))
+                page_token = page.get("nextPageToken")
+                if page_token is None:
+                    break
 
         # De-dupe in case history surfaced the same message twice.
         seen_ids: set[str] = set()

@@ -187,8 +187,35 @@ async def connect_gmail() -> dict:
     "/accounts/gmail/status",
     summary="Read the latest Gmail OAuth flow status",
 )
-def gmail_status() -> dict:
-    return dict(_OAUTH_STATE)
+def gmail_status(session: Session = SessionDep) -> dict:
+    """OAuth state plus live ingest counters.
+
+    The wizard's loader uses ingested_count to show "234 emails imported
+    so far" while phase=ingesting; counts are read directly off the
+    emails / ai_metadata tables filtered to the account that's currently
+    being onboarded, so we don't need to plumb a live counter through
+    the pipeline itself.
+    """
+    state = dict(_OAUTH_STATE)
+    account_id = state.get("account_id")
+    state["ingested_count"] = 0
+    state["triaged_count"] = 0
+    if isinstance(account_id, int):
+        from sqlalchemy import func as _func, select as _select
+
+        from mailpalace.db.schema import AIMetadata, Email
+
+        ingested = session.scalar(
+            _select(_func.count(Email.id)).where(Email.account_id == account_id)
+        )
+        triaged = session.scalar(
+            _select(_func.count(AIMetadata.email_id))
+            .join(Email, Email.id == AIMetadata.email_id)
+            .where(Email.account_id == account_id)
+        )
+        state["ingested_count"] = int(ingested or 0)
+        state["triaged_count"] = int(triaged or 0)
+    return state
 
 
 @router.post("/accounts/{account_id}/sync", summary="Force a sync for a connected account")
@@ -198,6 +225,27 @@ async def sync_account(account_id: int, session: Session = SessionDep) -> dict:
         raise HTTPException(status_code=404, detail="Account not found")
     new_count, error_count = await ingest_account(account_id)
     return {"new": new_count, "errors": error_count}
+
+
+@router.post(
+    "/accounts/{account_id}/rebackfill",
+    summary="Re-run a full canonical mailbox scan",
+    description=(
+        "Clears the stored Gmail historyId so the next ingest performs the "
+        "full no-q + includeSpamTrash backfill instead of an incremental "
+        "history.list. Existing rows are preserved; only messages that were "
+        "missed by earlier (narrower) queries get inserted, since "
+        "insert_email_if_new dedupes by provider_msg_id."
+    ),
+)
+async def rebackfill_account(account_id: int, session: Session = SessionDep) -> dict:
+    row = session.get(Account, account_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    row.last_sync_state = None
+    session.commit()
+    new_count, error_count = await ingest_account(account_id)
+    return {"new": new_count, "errors": error_count, "rebackfilled": True}
 
 
 class ImapConnectRequest(BaseModel):
