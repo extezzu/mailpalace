@@ -328,10 +328,40 @@ function ImapAddForm({
           {busy ? "Connecting…" : "Connect"}
         </button>
       </div>
-      {error && (
-        <div className="text-small" style={{ color: "rgb(var(--urgent))" }}>
-          {error}
-        </div>
+      {error && <ImapErrorHint error={error} host={form.host} />}
+    </div>
+  );
+}
+
+function ImapErrorHint({ error, host }: { error: string; host: string }) {
+  const lower = error.toLowerCase();
+  const isAppPasswordHint =
+    lower.includes("application-specific password") ||
+    lower.includes("app password") ||
+    lower.includes("application password");
+  const isGmail = host.includes("gmail.com") || isAppPasswordHint;
+
+  return (
+    <div
+      className="flex flex-col gap-2 rounded-md border px-3 py-2 text-small"
+      style={{ borderColor: "rgb(var(--urgent))", color: "rgb(var(--urgent))" }}
+    >
+      <span>{error}</span>
+      {isAppPasswordHint && isGmail && (
+        <span className="text-text-secondary">
+          Gmail no longer accepts your normal account password over IMAP. Create a
+          16-character{" "}
+          <a
+            href="https://myaccount.google.com/apppasswords"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline"
+            style={{ color: "rgb(var(--accent))" }}
+          >
+            App Password
+          </a>{" "}
+          (2-Step Verification must be on) and paste it in the password field.
+        </span>
       )}
     </div>
   );

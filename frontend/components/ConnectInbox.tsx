@@ -285,21 +285,46 @@ export function ConnectInbox({ onConnected }: Props) {
 
         {status === "error" && errorMessage && (
           <div
-            className="rounded-md border px-3 py-2 text-small"
+            className="flex flex-col gap-2 rounded-md border px-3 py-2 text-small"
             style={{ borderColor: "rgb(var(--urgent))", color: "rgb(var(--urgent))" }}
           >
             {errorMessage.includes("google_credentials.json") ? (
-              <>
+              <span>
                 Google credentials file missing. Save the OAuth client JSON to{" "}
                 <code className="font-mono">~/.mailpalace/google_credentials.json</code> and try again.
-              </>
+              </span>
             ) : errorMessage.includes("access_denied") ? (
-              <>
-                Google blocked the request. Add your gmail to{" "}
-                <strong>OAuth consent screen → Test users</strong> in Google Cloud Console.
-              </>
+              <span>
+                Google blocked the request. Add your gmail under{" "}
+                <a
+                  href="https://console.developers.google.com/auth/audience"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline"
+                  style={{ color: "rgb(var(--accent))" }}
+                >
+                  Google Auth Platform → Audience → Test users
+                </a>
+                .
+              </span>
+            ) : /application-specific password|app password/i.test(errorMessage) ? (
+              <span>
+                Gmail no longer accepts your normal password over IMAP. Create a
+                16-character{" "}
+                <a
+                  href="https://myaccount.google.com/apppasswords"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline"
+                  style={{ color: "rgb(var(--accent))" }}
+                >
+                  App Password
+                </a>{" "}
+                (2-Step Verification must be on) and paste it instead of your
+                regular password.
+              </span>
             ) : (
-              errorMessage
+              <span>{errorMessage}</span>
             )}
           </div>
         )}
