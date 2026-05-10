@@ -161,6 +161,21 @@ export function ThreadViewer({ email, body, userReply, onMarkRepliedSent }: Prop
 
       <div className="border-t border-border bg-surface p-4">
         <div className="rounded-lg border border-border bg-surface-elevated focus-within:border-accent">
+          {/* Account picker. v0 ships with a single connected mailbox so the
+              "From" row is read-only; v0.1 promotes this to a real select that
+              lists every authenticated account and remembers the choice
+              per-thread. The default is always the account the email
+              arrived to so a reply never goes from the wrong sender by
+              accident. */}
+          <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-small text-text-secondary">
+            <span className="font-mono text-caption uppercase tracking-wider text-text-tertiary">
+              From
+            </span>
+            <span className="truncate">demo@mailpalace.local</span>
+            <span className="ml-auto font-mono text-caption text-text-tertiary">
+              v0.1: switch account
+            </span>
+          </div>
           <textarea
             placeholder={isSent ? "This thread is in Sent. Write a follow-up..." : "Write a reply..."}
             value={reply}
