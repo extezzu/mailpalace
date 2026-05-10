@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, MailOpen, Trash2 } from "lucide-react";
+import { MailOpen, Trash2 } from "lucide-react";
 import { ClassificationBadge } from "./ClassificationBadge";
 import { LanguageFlag } from "./LanguageFlag";
 import type { EmailListItem as EmailListItemType } from "@/lib/types";
@@ -11,7 +11,6 @@ interface Props {
   isSelected: boolean;
   onSelect: () => void;
   onToggleRead: () => void;
-  onSnooze: () => void;
   onDelete: () => void;
 }
 
@@ -20,7 +19,6 @@ export function EmailListItem({
   isSelected,
   onSelect,
   onToggleRead,
-  onSnooze,
   onDelete,
 }: Props) {
   const isUnread = email.is_unread;
@@ -105,14 +103,6 @@ export function EmailListItem({
 
         <div className="hidden items-center gap-1 opacity-0 transition-opacity group-hover:flex group-hover:opacity-100">
           <QuickAction
-            icon={Bell}
-            label="Snooze"
-            onClick={(event) => {
-              event.stopPropagation();
-              onSnooze();
-            }}
-          />
-          <QuickAction
             icon={MailOpen}
             label={isUnread ? "Mark as read" : "Mark as unread"}
             onClick={(event) => {
@@ -139,7 +129,7 @@ function QuickAction({
   label,
   onClick,
 }: {
-  icon: typeof Bell;
+  icon: typeof MailOpen;
   label: string;
   onClick: (event: React.MouseEvent<HTMLButtonElement>) => void;
 }) {

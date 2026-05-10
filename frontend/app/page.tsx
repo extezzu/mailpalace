@@ -301,6 +301,26 @@ export default function HomePage() {
     }
   }
 
+  // Archive and snooze flip a local-only "row left the inbox" flag —
+  // the backend has already done the persistence (POST /archive,
+  // POST /snooze) before these fire. Reuses the existing rowIsActive
+  // gate (snoozed-or-deleted-or-sent → hidden) so we don't need a
+  // separate "archived" property.
+  function localHideAfterArchive(emailId: number) {
+    setFlags((prev) => ({
+      ...prev,
+      [emailId]: { ...prev[emailId], deleted: true },
+    }));
+    setSelectedId(null);
+  }
+  function localHideAfterSnooze(emailId: number) {
+    setFlags((prev) => ({
+      ...prev,
+      [emailId]: { ...prev[emailId], snoozed: true },
+    }));
+    setSelectedId(null);
+  }
+
   function markSent(emailId: number, replyBody: string) {
     setFlags((prev) => ({
       ...prev,
@@ -484,7 +504,6 @@ export default function HomePage() {
                       isSelected={selected?.id === email.id}
                       onSelect={() => setSelectedId(email.id)}
                       onToggleRead={() => toggleRead(email.id)}
-                      onSnooze={() => snooze(email.id)}
                       onDelete={() => deleteEmail(email.id)}
                     />
                   ))}
@@ -517,6 +536,10 @@ export default function HomePage() {
                   userReply={flags[selected.id]?.reply ?? null}
                   accounts={accounts}
                   onMarkRepliedSent={(replyBody) => markSent(selected.id, replyBody)}
+                  onArchived={() => localHideAfterArchive(selected.id)}
+                  onDeleted={() => localHideAfterArchive(selected.id)}
+                  onSnoozed={() => localHideAfterSnooze(selected.id)}
+                  onToggleRead={() => toggleRead(selected.id)}
                 />
               </div>
               <AiMetaSidebar email={selected} />

@@ -228,6 +228,31 @@ async def delete_email(
     return {"id": row.id, "deleted_at": row.deleted_at.isoformat() if row.deleted_at else None}
 
 
+@router.post("/email/{email_id}/archive", summary="Remove from Inbox without deleting")
+async def archive_email(
+    email_id: int, background: BackgroundTasks, session: Session = SessionDep
+) -> dict:
+    """Archive locally + propagate to the upstream mailbox.
+
+    Strips ``INBOX`` from the row's provider_labels so list_inbox stops
+    surfacing it, then asks the provider to drop the INBOX label too
+    (Gmail: ``users.messages.modify`` removeLabelIds=[INBOX]; IMAP:
+    archive/move per ImapSource.archive_remote).
+    """
+    from mailpalace.db.schema import Email
+
+    row = session.get(Email, email_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Email not found")
+    labels = list(row.provider_labels or [])
+    if "INBOX" in labels:
+        labels.remove("INBOX")
+        row.provider_labels = labels
+    session.commit()
+    background.add_task(_propagate_to_provider, email_id, "archive")
+    return {"id": email_id, "archived": True}
+
+
 @router.patch("/email/{email_id}", summary="Update read state")
 async def patch_email(
     email_id: int,

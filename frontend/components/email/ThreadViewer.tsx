@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
-import { Archive, Clock, Loader2, MoreHorizontal, Send, Sparkles } from "lucide-react";
+import { Archive, Loader2, MailOpen, MoreHorizontal, Send, Sparkles, Trash2 } from "lucide-react";
 import type { EmailListItem } from "@/lib/types";
 import { avatarBg, formatRelativeTime, senderInitials } from "@/lib/utils";
+import { SnoozeMenu } from "./SnoozeMenu";
 
 export interface SendableAccount {
   id: number;
@@ -21,6 +22,11 @@ interface Props {
   /** Every connected mailbox the user can send from. */
   accounts: SendableAccount[];
   onMarkRepliedSent?: (replyBody: string) => void;
+  /** Notify the parent when the row should leave the visible inbox. */
+  onArchived?: () => void;
+  onDeleted?: () => void;
+  onSnoozed?: () => void;
+  onToggleRead?: () => void;
 }
 
 interface DraftState {
@@ -45,6 +51,10 @@ export function ThreadViewer({
   userReply,
   accounts,
   onMarkRepliedSent,
+  onArchived,
+  onDeleted,
+  onSnoozed,
+  onToggleRead,
 }: Props) {
   const [draft, setDraft] = useState<DraftState>(INITIAL_DRAFT);
   const [reply, setReply] = useState("");
@@ -136,30 +146,14 @@ export function ThreadViewer({
             {email.subject ?? "(no subject)"}
           </span>
         </div>
-        <button
-          type="button"
-          className="inline-flex h-8 w-8 items-center justify-center rounded text-text-tertiary hover:bg-bg hover:text-text-primary"
-          aria-label="Archive"
-          title="Archive (e)"
-        >
-          <Archive className="h-4 w-4" />
-        </button>
-        <button
-          type="button"
-          className="inline-flex h-8 w-8 items-center justify-center rounded text-text-tertiary hover:bg-bg hover:text-text-primary"
-          aria-label="Snooze"
-          title="Snooze"
-        >
-          <Clock className="h-4 w-4" />
-        </button>
-        <button
-          type="button"
-          className="inline-flex h-8 w-8 items-center justify-center rounded text-text-tertiary hover:bg-bg hover:text-text-primary"
-          aria-label="More"
-          title="More"
-        >
-          <MoreHorizontal className="h-4 w-4" />
-        </button>
+        <ArchiveButton emailId={email.id} onArchived={onArchived} />
+        <SnoozeMenu emailId={email.id} onSnoozed={onSnoozed} />
+        <MoreMenu
+          emailId={email.id}
+          isUnread={email.is_unread}
+          onDeleted={onDeleted}
+          onToggleRead={onToggleRead}
+        />
       </div>
 
       <div className="flex-1 overflow-y-auto scrollbar-thin px-6 py-6">
@@ -307,6 +301,130 @@ export function ThreadViewer({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ArchiveButton({
+  emailId,
+  onArchived,
+}: {
+  emailId: number;
+  onArchived?: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  async function archive() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await fetch(api(`/api/email/${emailId}/archive`), { method: "POST" });
+      onArchived?.();
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <button
+      type="button"
+      onClick={archive}
+      disabled={busy}
+      className="inline-flex h-8 w-8 items-center justify-center rounded text-text-tertiary hover:bg-bg hover:text-text-primary disabled:cursor-wait disabled:opacity-60"
+      aria-label="Archive"
+      title="Archive — remove from Inbox without deleting"
+    >
+      {busy ? (
+        <Loader2 className="h-4 w-4 animate-spin" />
+      ) : (
+        <Archive className="h-4 w-4" />
+      )}
+    </button>
+  );
+}
+
+function MoreMenu({
+  emailId,
+  isUnread,
+  onDeleted,
+  onToggleRead,
+}: {
+  emailId: number;
+  isUnread: boolean;
+  onDeleted?: () => void;
+  onToggleRead?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onClickOutside(event: MouseEvent) {
+      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+    function onEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    window.addEventListener("mousedown", onClickOutside);
+    window.addEventListener("keydown", onEscape);
+    return () => {
+      window.removeEventListener("mousedown", onClickOutside);
+      window.removeEventListener("keydown", onEscape);
+    };
+  }, [open]);
+
+  async function markUnread() {
+    setOpen(false);
+    await fetch(api(`/api/email/${emailId}`), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ is_unread: !isUnread ? true : false }),
+    });
+    onToggleRead?.();
+  }
+
+  async function trash() {
+    setOpen(false);
+    await fetch(api(`/api/email/${emailId}/delete`), { method: "POST" });
+    onDeleted?.();
+  }
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        className="inline-flex h-8 w-8 items-center justify-center rounded text-text-tertiary hover:bg-bg hover:text-text-primary"
+        aria-label="More actions"
+        title="More"
+      >
+        <MoreHorizontal className="h-4 w-4" />
+      </button>
+      {open && (
+        <div
+          className="absolute right-0 top-full z-20 mt-1 w-[200px] overflow-hidden rounded-md border border-border bg-surface shadow-lg"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            onClick={markUnread}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-body text-text-primary hover:bg-surface-elevated"
+          >
+            <MailOpen className="h-3.5 w-3.5" />
+            {isUnread ? "Mark as read" : "Mark as unread"}
+          </button>
+          <button
+            type="button"
+            onClick={trash}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-body hover:bg-surface-elevated"
+            style={{ color: "rgb(var(--urgent))" }}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Move to Trash
+          </button>
+        </div>
+      )}
     </div>
   );
 }

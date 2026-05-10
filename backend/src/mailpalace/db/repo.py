@@ -97,7 +97,18 @@ def list_inbox(
     # JSON containment is non-portable. The set is small so we filter in-
     # memory after the SQL pass.
     if folder == "inbox":
-        rows = [r for r in rows if not _is_remote_excluded(r.provider_labels or [])]
+        # Two filters in one pass: drop rows Gmail moved to SPAM/TRASH/SENT,
+        # and drop rows that have an explicit label set without INBOX (the
+        # row was archived). Rows ingested before provider_labels existed
+        # have an empty list and are kept so legacy data stays visible.
+        def _kept(labels: list[str]) -> bool:
+            if _is_remote_excluded(labels):
+                return False
+            if labels and "INBOX" not in labels:
+                return False
+            return True
+
+        rows = [r for r in rows if _kept(r.provider_labels or [])]
     elif folder == "spam":
         rows = [r for r in rows if "SPAM" in (r.provider_labels or [])]
     elif folder == "sent":
