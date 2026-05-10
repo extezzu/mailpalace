@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { EmailListItem as EmailRow } from "@/components/email/EmailListItem";
+import { NewsletterDigest } from "@/components/email/NewsletterDigest";
 import { Sidebar } from "@/components/email/Sidebar";
 import { StatusBar } from "@/components/StatusBar";
 import { ThreadViewer } from "@/components/email/ThreadViewer";
@@ -259,52 +260,75 @@ export default function HomePage() {
           onSettings={() => router.push("/settings")}
         />
 
-        <section className="flex h-full w-[380px] shrink-0 flex-col border-r border-border bg-surface">
-          <div className="flex-1 overflow-y-auto scrollbar-thin">
-            {filtered.length === 0 ? (
-              <EmptyState
-                title="Nothing here"
-                description={
-                  activeFilter === "trash"
-                    ? "Trash is empty."
-                    : activeFilter === "sent"
-                      ? "Replies you send will appear here."
-                      : activeFilter === "newsletter"
-                        ? "Newsletter digest is empty. New newsletters land here automatically."
-                        : "Nothing to action right now."
-                }
-              />
-            ) : (
-              filtered.map((email) => (
-                <EmailRow
-                  key={email.id}
-                  email={email}
-                  isSelected={selected?.id === email.id}
-                  onSelect={() => setSelectedId(email.id)}
-                  onToggleRead={() => toggleRead(email.id)}
-                  onSnooze={() => snooze(email.id)}
-                  onDelete={() => deleteEmail(email.id)}
-                />
-              ))
-            )}
-          </div>
-        </section>
-
-        {selected ? (
-          <section className="flex h-full flex-1 min-w-0">
-            <div className="flex-1 min-w-0 bg-surface">
-              <ThreadViewer
-                email={selected}
-                body={BODIES[selected.id] ?? selected.snippet ?? ""}
-                userReply={flags[selected.id]?.reply ?? null}
-                onMarkRepliedSent={(replyBody) => markSent(selected.id, replyBody)}
-              />
-            </div>
-            <AiMetaSidebar email={selected} />
+        {activeFilter === "newsletter" ? (
+          <section className="flex h-full flex-1 flex-col border-r border-border bg-surface">
+            <NewsletterDigest
+              items={filtered}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              onMarkAllRead={(ids) => {
+                bulkDelete(ids);
+                setSelectedId(null);
+              }}
+            />
           </section>
         ) : (
-          <section className="flex h-full flex-1 items-center justify-center bg-surface">
-            <EmptyState title="Inbox zero." description="Nothing waiting on you." />
+          <section className="flex h-full w-[380px] shrink-0 flex-col border-r border-border bg-surface">
+            <div className="flex-1 overflow-y-auto scrollbar-thin">
+              {filtered.length === 0 ? (
+                <EmptyState
+                  title="Nothing here"
+                  description={
+                    activeFilter === "trash"
+                      ? "Trash is empty."
+                      : activeFilter === "sent"
+                        ? "Replies you send will appear here."
+                        : "Nothing to action right now."
+                  }
+                />
+              ) : (
+                filtered.map((email) => (
+                  <EmailRow
+                    key={email.id}
+                    email={email}
+                    isSelected={selected?.id === email.id}
+                    onSelect={() => setSelectedId(email.id)}
+                    onToggleRead={() => toggleRead(email.id)}
+                    onSnooze={() => snooze(email.id)}
+                    onDelete={() => deleteEmail(email.id)}
+                  />
+                ))
+              )}
+            </div>
+          </section>
+        )}
+
+        {activeFilter !== "newsletter" &&
+          (selected ? (
+            <section className="flex h-full flex-1 min-w-0">
+              <div className="flex-1 min-w-0 bg-surface">
+                <ThreadViewer
+                  email={selected}
+                  body={BODIES[selected.id] ?? selected.snippet ?? ""}
+                  userReply={flags[selected.id]?.reply ?? null}
+                  onMarkRepliedSent={(replyBody) => markSent(selected.id, replyBody)}
+                />
+              </div>
+              <AiMetaSidebar email={selected} />
+            </section>
+          ) : (
+            <section className="flex h-full flex-1 items-center justify-center bg-surface">
+              <EmptyState title="Inbox zero." description="Nothing waiting on you." />
+            </section>
+          ))}
+        {activeFilter === "newsletter" && selected && (
+          <section className="flex h-full w-[420px] shrink-0 border-l border-border bg-surface">
+            <ThreadViewer
+              email={selected}
+              body={BODIES[selected.id] ?? selected.snippet ?? ""}
+              userReply={flags[selected.id]?.reply ?? null}
+              onMarkRepliedSent={(replyBody) => markSent(selected.id, replyBody)}
+            />
           </section>
         )}
       </div>
