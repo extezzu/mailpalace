@@ -19,6 +19,7 @@ from mailpalace.web.routes import (
     events,
     inbox,
     settings,
+    threads,
 )
 
 
@@ -111,6 +112,7 @@ def create_app() -> FastAPI:
     app.include_router(settings.router, prefix="/api")
     app.include_router(accounts.router, prefix="/api")
     app.include_router(events.router, prefix="/api")
+    app.include_router(threads.router, prefix="/api")
 
     @app.get("/api/health")
     async def health() -> dict:

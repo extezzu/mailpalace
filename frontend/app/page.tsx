@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { ConnectInbox } from "@/components/ConnectInbox";
 import { EmailListItem as EmailRow } from "@/components/email/EmailListItem";
 import { NewsletterDigest } from "@/components/email/NewsletterDigest";
+import { SentChatView } from "@/components/email/SentChatView";
 import { Sidebar } from "@/components/email/Sidebar";
 import { StatusBar } from "@/components/StatusBar";
 import { ThreadViewer } from "@/components/email/ThreadViewer";
@@ -443,7 +444,9 @@ export default function HomePage() {
           onSettings={() => router.push("/settings")}
         />
 
-        {activeFilter === "newsletter" ? (
+        {activeFilter === "sent" ? (
+          <SentChatView refreshSignal={emails.length} />
+        ) : activeFilter === "newsletter" ? (
           <section className="flex h-full flex-1 flex-col border-r border-border bg-surface">
             <NewsletterDigest
               items={filtered}
@@ -469,9 +472,7 @@ export default function HomePage() {
                   description={
                     activeFilter === "trash"
                       ? "Trash is empty."
-                      : activeFilter === "sent"
-                        ? "Replies you send will appear here."
-                        : "Nothing to action right now."
+                      : "Nothing to action right now."
                   }
                 />
               ) : (
@@ -497,6 +498,7 @@ export default function HomePage() {
         )}
 
         {activeFilter !== "newsletter" &&
+          activeFilter !== "sent" &&
           (selected ? (
             <section className="flex h-full flex-1 min-w-0">
               <div className="flex-1 min-w-0 bg-surface">
