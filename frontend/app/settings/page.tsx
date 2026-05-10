@@ -57,6 +57,7 @@ export default function SettingsPage() {
   const router = useRouter();
   const [view, setView] = useState<SettingsView | null>(null);
   const [accounts, setAccounts] = useState<ConnectedAccount[]>([]);
+  const [accountsLoaded, setAccountsLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -65,6 +66,7 @@ export default function SettingsPage() {
       const resp = await fetch(api("/api/accounts"));
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       setAccounts(await resp.json());
+      setAccountsLoaded(true);
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : String(exc));
     }
@@ -82,6 +84,19 @@ export default function SettingsPage() {
     }
     load();
   }, []);
+
+  // Auth gate: settings is meaningless without a connected mailbox, so
+  // bounce the user back to "/" the moment we confirm the account list
+  // is empty. `accountsLoaded` keeps us from redirecting before the
+  // first fetch returns; `error` suppresses the redirect on transient
+  // backend failures so the user sees the real error instead of a
+  // surprise navigation.
+  useEffect(() => {
+    if (!accountsLoaded || error) return;
+    if (accounts.length === 0) {
+      router.replace("/");
+    }
+  }, [accountsLoaded, accounts.length, error, router]);
 
   async function patch(body: Record<string, unknown>) {
     setSaving(true);
@@ -120,7 +135,10 @@ export default function SettingsPage() {
       </main>
     );
   }
-  if (!view) {
+  // Hold the page on a neutral loader while the auth gate decides where
+  // to send the user. Without this, an unauthenticated visit to /settings
+  // would briefly flash the real settings UI before the redirect.
+  if (!view || !accountsLoaded || accounts.length === 0) {
     return (
       <main className="flex h-screen items-center justify-center p-8 text-text-tertiary">
         Loading…
