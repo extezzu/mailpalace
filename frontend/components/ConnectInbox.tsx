@@ -11,20 +11,9 @@ interface Props {
 const PHASE_LABEL: Record<string, string> = {
   awaiting_consent: "Waiting for Google consent…",
   exchanging: "Saving credentials…",
-  ingesting: "Importing your mailbox…",
+  ingesting: "Almost there…",
   done: "Done",
   error: "Failed",
-};
-
-// Phrasing tuned for the wizard's loader copy: tells the user what is
-// actually happening on the backend during the multi-second wait, so an
-// idle "Waiting" spinner does not feel hung.
-const PHASE_DETAIL: Record<string, string> = {
-  awaiting_consent:
-    "A Google consent tab should have opened in your browser. Approve access there to continue.",
-  exchanging: "Storing the refresh token in your OS keyring.",
-  ingesting:
-    "Reading every label (Inbox, Sent, Drafts, Spam, Trash, Categories). Your first triage pass starts as soon as 50 emails arrive.",
 };
 
 type Mode = "gmail" | "imap";
@@ -89,11 +78,9 @@ export function ConnectInbox({ onConnected }: Props) {
   }, []);
 
   const [consentUrl, setConsentUrl] = useState<string | null>(null);
-  const [ingestedCount, setIngestedCount] = useState<number>(0);
-  const [triagedCount, setTriagedCount] = useState<number>(0);
 
   // Mirror the backend phase into local state so the button label is honest
-  // about what's happening (Waiting for consent / Exchanging / Ingesting).
+  // about what's happening (Waiting for consent / Saving credentials).
   // Also surfaces the consent URL so the user can open Google manually if
   // the OS browser-launch fails silently (some Windows configurations).
   useEffect(() => {
@@ -103,17 +90,10 @@ export function ConnectInbox({ onConnected }: Props) {
       try {
         const resp = await fetch(api("/api/accounts/gmail/status"));
         if (!resp.ok) return;
-        const state: {
-          phase: string;
-          consent_url: string | null;
-          ingested_count?: number;
-          triaged_count?: number;
-        } = await resp.json();
+        const state: { phase: string; consent_url: string | null } = await resp.json();
         if (!cancelled) {
           setPhase(state.phase);
           setConsentUrl(state.consent_url);
-          setIngestedCount(state.ingested_count ?? 0);
-          setTriagedCount(state.triaged_count ?? 0);
         }
       } catch {
         /* ignore */
@@ -284,13 +264,6 @@ export function ConnectInbox({ onConnected }: Props) {
                 ? PHASE_LABEL[phase] ?? "Waiting for Google consent…"
                 : "Continue with Google"}
             </button>
-            {status === "connecting" && (
-              <ProgressLoader
-                phase={phase}
-                ingestedCount={ingestedCount}
-                triagedCount={triagedCount}
-              />
-            )}
             {status === "connecting" && phase === "awaiting_consent" && consentUrl && (
               <p className="text-small text-text-secondary">
                 Browser didn&apos;t open?{" "}
@@ -342,39 +315,6 @@ export function ConnectInbox({ onConnected }: Props) {
         </p>
       </div>
     </main>
-  );
-}
-
-function ProgressLoader({
-  phase,
-  ingestedCount,
-  triagedCount,
-}: {
-  phase: string;
-  ingestedCount: number;
-  triagedCount: number;
-}) {
-  const detail = PHASE_DETAIL[phase];
-  if (!detail && phase !== "ingesting") return null;
-  return (
-    <div className="flex flex-col gap-2 rounded-md border border-border bg-surface-elevated px-3 py-3 text-small text-text-secondary">
-      <div className="flex items-center gap-2">
-        <Loader2
-          className="h-3.5 w-3.5 animate-spin"
-          style={{ color: "rgb(var(--accent))" }}
-          aria-hidden
-        />
-        <span className="text-text-primary">{PHASE_LABEL[phase] ?? phase}</span>
-      </div>
-      {detail && <p className="leading-snug">{detail}</p>}
-      {phase === "ingesting" && (
-        <p className="font-mono text-caption">
-          {ingestedCount.toLocaleString()} email
-          {ingestedCount === 1 ? "" : "s"} imported
-          {triagedCount > 0 ? ` · ${triagedCount.toLocaleString()} triaged` : ""}
-        </p>
-      )}
-    </div>
   );
 }
 
