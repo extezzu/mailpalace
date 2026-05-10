@@ -54,27 +54,24 @@ def _load_client_config() -> dict[str, Any]:
 
 
 def run_install_flow(
-    on_url: Callable[[str], None] | None = None,
+    _on_url: Callable[[str], None] | None = None,
 ) -> tuple[Credentials, dict[str, Any]]:
     """Open the local browser, return fresh credentials + the user profile.
 
     Blocks until the user approves the consent screen. The Google client
-    library spawns a one-off localhost listener for the redirect. If
-    ``on_url`` is provided we hand it the consent URL before any browser
-    launch so the caller can publish it for the UI to expose as a
-    fallback link when the OS browser-launch fails silently.
+    library spawns a one-off localhost listener for the redirect.
+
+    The ``_on_url`` parameter is ignored. Earlier versions tried to pre-
+    publish the consent URL by pre-setting ``flow.redirect_uri`` and
+    calling ``authorization_url()`` ahead of ``run_local_server``, but
+    ``run_local_server`` overwrites ``redirect_uri`` with its real bound
+    port, so the published URL was permanently broken (redirect_uri=
+    http://localhost:0). Tomorrow we move to a backend /oauth/callback
+    route + window.open from the frontend; for now we let the library do
+    its own redirect URI and browser launch.
     """
     client_config = _load_client_config()
     flow = InstalledAppFlow.from_client_config(client_config, SCOPES)
-    if on_url is not None:
-        # Spin up the redirect URI the same way run_local_server does, so
-        # the URL we publish here is the one the user will actually visit.
-        flow.redirect_uri = "http://localhost:0"
-        auth_url, _state = flow.authorization_url(prompt="consent", access_type="offline")
-        try:
-            on_url(auth_url)
-        except Exception:
-            logger.exception("on_url callback failed")
     creds = flow.run_local_server(port=0, open_browser=True)
     profile = build("gmail", "v1", credentials=creds).users().getProfile(userId="me").execute()
     return creds, profile
