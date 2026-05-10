@@ -62,7 +62,19 @@ def build_triage_system(*, summary_locale: str, user_addressing: str) -> str:
         '  "summary": "...",\n'
         '  "suggested_action": "..."\n'
         '}\n'
-        f"\nCRITICAL: BOTH `summary` AND `suggested_action` MUST be written in {lang_name}, "
+        "\nCRITICAL CLASSIFICATION RULES:\n"
+        "- `classification` MUST be one of these EXACT English strings, lowercased:\n"
+        "  urgent, important, newsletter, promotion, transactional, spam, other.\n"
+        "- DO NOT translate the classification. Use the English keyword even when the\n"
+        "  summary is in Russian, Polish, German, etc.\n"
+        "- urgent: needs action in <24h.\n"
+        "- important: needs action this week.\n"
+        "- transactional: receipt, invoice, shipment update, account notification.\n"
+        "- newsletter: digest, blog updates, weekly summary.\n"
+        "- promotion: marketing, sales, advertising, coupons.\n"
+        "- spam: unwanted, suspicious, phishing.\n"
+        "- other: doesn't fit elsewhere.\n"
+        f"\nCRITICAL LANGUAGE RULES: BOTH `summary` AND `suggested_action` MUST be in {lang_name}, "
         f"regardless of the source email's language. Translate as needed. Never echo the "
         f"source language for these two fields.\n"
         f"`summary`: 2 lines, in {lang_name}, addressed directly to the user{addressing}, "

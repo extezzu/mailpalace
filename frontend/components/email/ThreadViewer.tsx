@@ -9,6 +9,7 @@ import { avatarBg, formatRelativeTime, MOCK_REFERENCE_NOW_MS, senderInitials } f
 interface Props {
   email: EmailListItem;
   body: string;
+  bodyHtml?: string | null;
   /** Reply text the user previously sent for this email, if any. */
   userReply?: string | null;
   onMarkRepliedSent?: (replyBody: string) => void;
@@ -23,7 +24,7 @@ interface DraftState {
 
 const INITIAL_DRAFT: DraftState = { body: "", loading: false, error: null, meta: null };
 
-export function ThreadViewer({ email, body, userReply, onMarkRepliedSent }: Props) {
+export function ThreadViewer({ email, body, bodyHtml, userReply, onMarkRepliedSent }: Props) {
   const [draft, setDraft] = useState<DraftState>(INITIAL_DRAFT);
   const [reply, setReply] = useState("");
   const [sendNotice, setSendNotice] = useState<string | null>(null);
@@ -140,9 +141,22 @@ export function ThreadViewer({ email, body, userReply, onMarkRepliedSent }: Prop
               <span className="text-small text-text-secondary">to me</span>
             </div>
           </header>
-          <div className="prose prose-sm max-w-none whitespace-pre-wrap font-sans text-body text-text-primary">
-            {body}
-          </div>
+          {bodyHtml ? (
+            // Sandboxed iframe: arbitrary email HTML cannot run scripts or
+            // touch the parent page. srcDoc is a string Next.js renders
+            // straight into the attribute.
+            <iframe
+              title="Email body"
+              srcDoc={bodyHtml}
+              sandbox=""
+              className="block w-full rounded-md border border-border bg-surface"
+              style={{ minHeight: "320px", height: "60vh" }}
+            />
+          ) : (
+            <div className="prose prose-sm max-w-none whitespace-pre-wrap font-sans text-body text-text-primary">
+              {body}
+            </div>
+          )}
         </article>
 
         {userReply && (

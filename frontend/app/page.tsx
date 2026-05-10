@@ -85,7 +85,11 @@ const RANK: Record<string, number> = {
 };
 
 function importanceRank(email: EmailListItem): number {
-  const cls = email.ai?.classification ?? "other";
+  // Be tolerant of casing / leading-trailing whitespace; older rows that
+  // were classified before the prompt enforced lowercase still need to
+  // sort sensibly.
+  const raw = email.ai?.classification;
+  const cls = typeof raw === "string" ? raw.trim().toLowerCase() : "other";
   const base = RANK[cls] ?? 10;
   const conf = email.ai?.confidence ?? 0;
   return base + conf;
@@ -105,6 +109,11 @@ export default function HomePage() {
   const [emails, setEmails] = useState<EmailListItem[]>([]);
   const [flags, setFlags] = useState<Record<number, RowFlags>>({});
   const [accountEmail, setAccountEmail] = useState("");
+  const [selectedDetail, setSelectedDetail] = useState<{
+    id: number;
+    body_text: string | null;
+    body_html: string | null;
+  } | null>(null);
   const [summaryLocale, setSummaryLocale] = useState<string>("en");
   const [retriaging, setRetriaging] = useState(false);
   const [retriageProgress, setRetriageProgress] = useState<{ current: number; total: number } | null>(null);
@@ -243,6 +252,34 @@ export default function HomePage() {
       if (prev[selected.id]?.read) return prev;
       return { ...prev, [selected.id]: { ...prev[selected.id], read: true } };
     });
+  }, [selected?.id]);
+
+  // Fetch the full email body when the selection changes; the inbox payload
+  // only carries snippet, so the thread viewer needs detail for HTML mail.
+  useEffect(() => {
+    if (selected === null || selected === undefined) return;
+    let cancelled = false;
+    async function load() {
+      try {
+        const resp = await fetch(api(`/api/email/${selected.id}`));
+        if (!resp.ok) return;
+        const data: { id: number; body_text: string | null; body_html: string | null } =
+          await resp.json();
+        if (!cancelled) {
+          setSelectedDetail({
+            id: data.id,
+            body_text: data.body_text,
+            body_html: data.body_html,
+          });
+        }
+      } catch {
+        /* keep showing the snippet fallback */
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
   }, [selected?.id]);
 
   const langs = useMemo(() => {
@@ -480,7 +517,16 @@ export default function HomePage() {
           <section className="flex h-full w-[420px] shrink-0 border-l border-border bg-surface">
             <ThreadViewer
               email={selected}
-              body={BODIES[selected.id] ?? selected.snippet ?? ""}
+              body={
+                (selectedDetail && selectedDetail.id === selected.id
+                  ? selectedDetail.body_text
+                  : null) ?? BODIES[selected.id] ?? selected.snippet ?? ""
+              }
+              bodyHtml={
+                selectedDetail && selectedDetail.id === selected.id
+                  ? selectedDetail.body_html
+                  : null
+              }
               userReply={flags[selected.id]?.reply ?? null}
               onMarkRepliedSent={(replyBody) => markSent(selected.id, replyBody)}
             />

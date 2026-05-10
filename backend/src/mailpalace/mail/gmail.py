@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import re
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from email import message_from_bytes
@@ -40,8 +41,21 @@ def _parse_addresses(raw: str | None) -> list[dict]:
     return [{"name": _decode(name), "email": email} for name, email in getaddresses([raw]) if email]
 
 
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _strip_html(html: str) -> str:
+    text = _HTML_TAG_RE.sub(" ", html)
+    return " ".join(text.split())
+
+
 def _walk_body(msg) -> tuple[str, str | None]:
-    """Return (text, html) extracted from a parsed RFC822 message."""
+    """Return (text, html) extracted from a parsed RFC822 message.
+
+    Single-part HTML messages must NOT have their HTML dumped into the text
+    field; we keep the markup separately and derive a tag-stripped fallback
+    so triage prompts and snippets see prose, not source.
+    """
     text_parts: list[str] = []
     html: str | None = None
     if msg.is_multipart():
@@ -58,10 +72,18 @@ def _walk_body(msg) -> tuple[str, str | None]:
                 charset = part.get_content_charset() or "utf-8"
                 html = payload.decode(charset, errors="replace")
     else:
+        ctype = msg.get_content_type()
         payload = msg.get_payload(decode=True) or b""
         charset = msg.get_content_charset() or "utf-8"
-        text_parts.append(payload.decode(charset, errors="replace"))
-    return "\n".join(text_parts).strip(), html
+        decoded = payload.decode(charset, errors="replace")
+        if ctype == "text/html":
+            html = decoded
+        else:
+            text_parts.append(decoded)
+    text = "\n".join(text_parts).strip()
+    if not text and html:
+        text = _strip_html(html)
+    return text, html
 
 
 def _has_attachments(msg) -> bool:

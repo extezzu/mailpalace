@@ -24,6 +24,50 @@ logger = logging.getLogger(__name__)
 
 _CODE_FENCE_RE = re.compile(r"^\s*```(?:json)?\s*\n?(?P<body>.*?)\n?```\s*$", re.DOTALL | re.IGNORECASE)
 
+_ALLOWED_CLASSIFICATIONS = {
+    "urgent",
+    "important",
+    "newsletter",
+    "promotion",
+    "transactional",
+    "spam",
+    "other",
+}
+
+# Common LLM aliases, including Russian / Ukrainian / German equivalents the
+# model sometimes returns when it forgets the "English-only" instruction.
+_CLASSIFICATION_ALIASES = {
+    "срочное": "urgent",
+    "срочно": "urgent",
+    "важное": "important",
+    "важно": "important",
+    "уведомление": "transactional",
+    "квитанция": "transactional",
+    "чек": "transactional",
+    "квитанция/счет": "transactional",
+    "рассылка": "newsletter",
+    "дайджест": "newsletter",
+    "промо": "promotion",
+    "реклама": "promotion",
+    "advertising": "promotion",
+    "marketing": "promotion",
+    "receipt": "transactional",
+    "invoice": "transactional",
+    "notification": "transactional",
+    "digest": "newsletter",
+}
+
+
+def _normalise_classification(value: object) -> str:
+    if not isinstance(value, str):
+        return "other"
+    key = value.strip().lower()
+    if key in _ALLOWED_CLASSIFICATIONS:
+        return key
+    if key in _CLASSIFICATION_ALIASES:
+        return _CLASSIFICATION_ALIASES[key]
+    return "other"
+
 
 async def triage_email(email_id: int) -> bool:
     """Run the triage pipeline against a single email. Returns True on success."""
@@ -72,12 +116,13 @@ async def triage_email(email_id: int) -> bool:
 
     parsed = _parse_triage_response(resp.text, fallback_language=language)
 
+    classification = _normalise_classification(parsed.get("classification"))
     with session_scope() as session:
         upsert_ai_metadata(
             session,
             email_id,
             language_code=parsed.get("language_code", language),
-            classification=parsed.get("classification"),
+            classification=classification,
             classification_confidence=parsed.get("classification_confidence"),
             summary=parsed.get("summary") or parsed.get("summary_ru"),
             summary_locale=settings.summary_locale,
