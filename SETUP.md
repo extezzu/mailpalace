@@ -1,6 +1,6 @@
 # MailPalace — Setup Guide
 
-> **Built for ADHD brains and AI assistants.** Every step is a checkbox. Every click has a screenshot or a copy-pasteable command. If something looks confusing, jump to **[Troubleshooting](#troubleshooting)** at the end.
+> **Written for humans.** AI coding assistants (Claude Code, Codex, Cursor, …) should also be able to read this top-to-bottom and install MailPalace deterministically — see the dedicated [🤖 Section for AI assistants](#-section-for-ai-assistants) at the end. Every step is a checkbox. Every click has a screenshot or a copy-pasteable command. If something looks confusing, jump to **[Troubleshooting](#troubleshooting)**.
 
 ---
 
