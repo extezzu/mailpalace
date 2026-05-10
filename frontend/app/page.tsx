@@ -198,27 +198,12 @@ export default function HomePage() {
       if (activeFilter === "newsletter") return NEWSLETTERS.includes(cls);
       return cls === activeFilter;
     });
-    // Sort policy:
-    //   - Inbox view: AI classification first (urgent → important →
-    //     everything else), date-desc inside each group. Inside one
-    //     classification a fresher email outranks an older one.
-    //   - AI buckets (urgent / important / newsletter / etc.) and
-    //     Sent / Trash: classification is constant or irrelevant, so
-    //     just date-desc.
-    const isInboxView = activeFilter === "inbox";
-    const importanceRank = (cls: Classification | undefined): number => {
-      if (cls === "urgent") return 0;
-      if (cls === "important") return 1;
-      return 2;
-    };
-    return list.sort((a, b) => {
-      if (isInboxView) {
-        const ra = importanceRank(a.ai?.classification as Classification | undefined);
-        const rb = importanceRank(b.ai?.classification as Classification | undefined);
-        if (ra !== rb) return ra - rb;
-      }
-      return new Date(b.received_at).getTime() - new Date(a.received_at).getTime();
-    });
+    // Sort policy: pure chronological, newest first. Importance is
+    // already visible as a coloured badge on each row, so promoting an
+    // old `urgent` above a fresh `other` only confused the timeline.
+    return list.sort(
+      (a, b) => new Date(b.received_at).getTime() - new Date(a.received_at).getTime(),
+    );
   }, [liveEmails, flags, activeFilter]);
 
   const selected = filtered.find((e) => e.id === selectedId) ?? filtered[0] ?? null;
