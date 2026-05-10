@@ -1,145 +1,39 @@
 """Gmail mail source.
 
-Real fetch loop for Gmail. Uses ``users.history.list`` for incremental sync
-and falls back to ``users.messages.list`` with ``newer_than:30d`` on the
-first run or when the stored historyId expires (Google drops history older
-than seven days).
+Real fetch loop for Gmail. Uses ``users.history.list`` for incremental
+sync and falls back to a canonical ``users.messages.list`` (no q,
+includeSpamTrash=True) on the first run or when the stored historyId
+expires (Google drops history older than seven days).
+
+RFC822 parsing is shared with the IMAP source — see ``mail/_rfc822.py``.
 """
 
 from __future__ import annotations
 
 import base64
 import logging
-import re
 from collections.abc import AsyncIterator
-from datetime import datetime, timezone
-from email import message_from_bytes
-from email.header import decode_header, make_header
-from email.utils import getaddresses, parsedate_to_datetime
 
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from mailpalace.auth import gmail_oauth
 from mailpalace.mail._retry import with_gmail_retry
+from mailpalace.mail._rfc822 import parse_rfc822
 from mailpalace.mail.base import NormalizedEmail
 
 logger = logging.getLogger(__name__)
-
-
-def _decode(raw: str | None) -> str:
-    if not raw:
-        return ""
-    try:
-        return str(make_header(decode_header(raw)))
-    except Exception:
-        return raw
-
-
-def _parse_addresses(raw: str | None) -> list[dict]:
-    if not raw:
-        return []
-    return [{"name": _decode(name), "email": email} for name, email in getaddresses([raw]) if email]
-
-
-_HTML_TAG_RE = re.compile(r"<[^>]+>")
-_HTML_BLOCK_NOISE_RE = re.compile(
-    r"<(script|style|head)\b[^>]*>.*?</\1>",
-    re.IGNORECASE | re.DOTALL,
-)
-_HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
-
-
-def _strip_html(html: str) -> str:
-    """Plain-text fallback that drops markup, comments, scripts, and styles.
-
-    Plain `re.sub("<[^>]+>")` keeps the contents of `<style>` blocks and
-    Outlook-flavoured CSS comments, which then surface in the snippet and
-    in the triage prompt. Strip those wrappers first, then the tags.
-    """
-    cleaned = _HTML_COMMENT_RE.sub(" ", html)
-    cleaned = _HTML_BLOCK_NOISE_RE.sub(" ", cleaned)
-    cleaned = _HTML_TAG_RE.sub(" ", cleaned)
-    return " ".join(cleaned.split())
-
-
-def _walk_body(msg) -> tuple[str, str | None]:
-    """Return (text, html) extracted from a parsed RFC822 message.
-
-    Single-part HTML messages must NOT have their HTML dumped into the text
-    field; we keep the markup separately and derive a tag-stripped fallback
-    so triage prompts and snippets see prose, not source.
-    """
-    text_parts: list[str] = []
-    html: str | None = None
-    if msg.is_multipart():
-        for part in msg.walk():
-            ctype = part.get_content_type()
-            if part.get_filename():
-                continue
-            if ctype == "text/plain":
-                payload = part.get_payload(decode=True) or b""
-                charset = part.get_content_charset() or "utf-8"
-                text_parts.append(payload.decode(charset, errors="replace"))
-            elif ctype == "text/html" and html is None:
-                payload = part.get_payload(decode=True) or b""
-                charset = part.get_content_charset() or "utf-8"
-                html = payload.decode(charset, errors="replace")
-    else:
-        ctype = msg.get_content_type()
-        payload = msg.get_payload(decode=True) or b""
-        charset = msg.get_content_charset() or "utf-8"
-        decoded = payload.decode(charset, errors="replace")
-        if ctype == "text/html":
-            html = decoded
-        else:
-            text_parts.append(decoded)
-    text = "\n".join(text_parts).strip()
-    if not text and html:
-        text = _strip_html(html)
-    return text, html
-
-
-def _has_attachments(msg) -> bool:
-    if not msg.is_multipart():
-        return False
-    return any(part.get_filename() for part in msg.walk())
 
 
 def _normalise(
     message_id: str, thread_id: str, raw_b64: str, labels: list[str] | None = None
 ) -> NormalizedEmail:
     raw_bytes = base64.urlsafe_b64decode(raw_b64.encode("ascii"))
-    msg = message_from_bytes(raw_bytes)
-    from_addresses = _parse_addresses(msg.get("From"))
-    sender = from_addresses[0] if from_addresses else {"name": "", "email": ""}
-    text, html = _walk_body(msg)
-    received = msg.get("Date")
-    try:
-        received_at = parsedate_to_datetime(received) if received else datetime.now(tz=timezone.utc)
-    except (TypeError, ValueError):
-        received_at = datetime.now(tz=timezone.utc)
-    if received_at.tzinfo is not None:
-        received_at = received_at.astimezone(timezone.utc).replace(tzinfo=None)
-    label_set = labels or []
-    return NormalizedEmail(
+    return parse_rfc822(
+        raw_bytes,
         provider_msg_id=message_id,
         provider_thread_id=thread_id,
-        rfc822_message_id=msg.get("Message-ID"),
-        from_name=sender.get("name") or None,
-        from_email=sender.get("email") or "(unknown)",
-        to=_parse_addresses(msg.get("To")),
-        cc=_parse_addresses(msg.get("Cc")),
-        subject=_decode(msg.get("Subject")),
-        snippet=text[:200] if text else "",
-        body_text=text,
-        body_html=html,
-        received_at=received_at,
-        raw_size_bytes=len(raw_bytes),
-        is_unread="UNREAD" in label_set,
-        is_starred="STARRED" in label_set,
-        has_attachments=_has_attachments(msg),
-        labels=label_set,
+        labels=labels or [],
     )
 
 

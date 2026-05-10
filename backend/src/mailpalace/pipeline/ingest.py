@@ -17,6 +17,7 @@ from mailpalace.db.repo import (
 from mailpalace.db.schema import Account, Email
 from mailpalace.mail.base import MailSource, NormalizedEmail
 from mailpalace.mail.gmail import GmailSource
+from mailpalace.mail.imap import ImapSource
 from mailpalace.pipeline.triage import triage_email
 
 logger = logging.getLogger(__name__)
@@ -25,7 +26,24 @@ logger = logging.getLogger(__name__)
 def _build_source(account: Account) -> MailSource:
     if account.kind == "gmail":
         return GmailSource(account_id=account.id, email_address=account.email_address)
-    raise NotImplementedError(f"v0.1 only supports gmail; got {account.kind}")
+    if account.kind == "imap":
+        config = account.config_json or {}
+        host = config.get("host")
+        port = int(config.get("port") or 993)
+        username = config.get("username") or account.email_address
+        if not host:
+            raise RuntimeError(
+                f"IMAP account {account.id} has no host in config_json; "
+                "reconnect via the wizard."
+            )
+        return ImapSource(
+            account_id=account.id,
+            email_address=account.email_address,
+            host=host,
+            port=port,
+            username=username,
+        )
+    raise NotImplementedError(f"unsupported account kind: {account.kind}")
 
 
 async def ingest_account(account_id: int) -> tuple[int, int]:

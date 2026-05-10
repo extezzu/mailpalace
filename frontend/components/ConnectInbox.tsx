@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
+import { IMAP_PRESETS } from "@/lib/imap-presets";
 import { Loader2, Lock, Mail, Server, Sparkles } from "lucide-react";
 
 interface Props {
@@ -25,14 +26,6 @@ interface ImapForm {
   username: string;
   password: string;
 }
-
-const PRESETS: { name: string; host: string; port: number }[] = [
-  { name: "Outlook / Hotmail", host: "outlook.office365.com", port: 993 },
-  { name: "iCloud Mail", host: "imap.mail.me.com", port: 993 },
-  { name: "Fastmail", host: "imap.fastmail.com", port: 993 },
-  { name: "Mailbox.org", host: "imap.mailbox.org", port: 993 },
-  { name: "Proton (via Proton Bridge)", host: "127.0.0.1", port: 1143 },
-];
 
 const EMPTY_IMAP: ImapForm = {
   email_address: "",
@@ -357,7 +350,7 @@ function ImapForm({
   disabled: boolean;
 }) {
   function applyPreset(name: string) {
-    const preset = PRESETS.find((p) => p.name === name);
+    const preset = IMAP_PRESETS.find((p) => p.name === name);
     if (!preset) return;
     onChange({ ...value, host: preset.host, port: String(preset.port) });
   }
@@ -372,7 +365,7 @@ function ImapForm({
           defaultValue=""
         >
           <option value="">— pick a provider —</option>
-          {PRESETS.map((preset) => (
+          {IMAP_PRESETS.map((preset) => (
             <option key={preset.name} value={preset.name}>
               {preset.name}
             </option>

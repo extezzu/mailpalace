@@ -3,7 +3,7 @@
 import { CheckCircle2, ChevronRight, Star } from "lucide-react";
 import type { EmailListItem } from "@/lib/types";
 import { ClassificationBadge } from "./ClassificationBadge";
-import { formatRelativeTime, MOCK_REFERENCE_NOW_MS, senderInitials } from "@/lib/utils";
+import { formatRelativeTime, senderInitials } from "@/lib/utils";
 
 interface Props {
   items: EmailListItem[];
@@ -73,7 +73,7 @@ export function NewsletterDigest({ items, onSelect, onMarkAllRead, selectedId }:
               {lead.subject ?? "(no subject)"}
             </h2>
             <span className="text-small text-text-tertiary">
-              {formatRelativeTime(lead.received_at, MOCK_REFERENCE_NOW_MS)}
+              {formatRelativeTime(lead.received_at)}
             </span>
           </div>
           <p className="mt-1 text-small text-text-secondary">
@@ -126,7 +126,7 @@ export function NewsletterDigest({ items, onSelect, onMarkAllRead, selectedId }:
                           <ClassificationBadge category={item.ai.classification} />
                         )}
                         <span className="ml-auto shrink-0 text-small text-text-tertiary">
-                          {formatRelativeTime(item.received_at, MOCK_REFERENCE_NOW_MS)}
+                          {formatRelativeTime(item.received_at)}
                         </span>
                       </div>
                       <p className="truncate text-small text-text-secondary">

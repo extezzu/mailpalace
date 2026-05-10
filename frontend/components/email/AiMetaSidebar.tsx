@@ -1,7 +1,7 @@
 import { Sparkles } from "lucide-react";
 import type { EmailListItem } from "@/lib/types";
 import { ClassificationBadge } from "./ClassificationBadge";
-import { formatRelativeTime, MOCK_REFERENCE_NOW_MS } from "@/lib/utils";
+import { formatRelativeTime } from "@/lib/utils";
 
 const LANGUAGE_NAMES: Record<string, string> = {
   en: "English",
@@ -70,7 +70,7 @@ export function AiMetaSidebar({ email }: Props) {
       </div>
 
       <div className="mt-auto border-t border-border pt-4 text-caption text-text-tertiary">
-        Triaged {formatRelativeTime(email.received_at, MOCK_REFERENCE_NOW_MS)} ago
+        Triaged {formatRelativeTime(email.received_at)} ago
       </div>
     </aside>
   );

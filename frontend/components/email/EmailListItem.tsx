@@ -4,7 +4,7 @@ import { Bell, MailOpen, Trash2 } from "lucide-react";
 import { ClassificationBadge } from "./ClassificationBadge";
 import { LanguageFlag } from "./LanguageFlag";
 import type { EmailListItem as EmailListItemType } from "@/lib/types";
-import { avatarBg, cn, formatRelativeTime, MOCK_REFERENCE_NOW_MS, senderInitials } from "@/lib/utils";
+import { avatarBg, cn, formatRelativeTime, senderInitials } from "@/lib/utils";
 
 interface Props {
   email: EmailListItemType;
@@ -64,7 +64,7 @@ export function EmailListItem({
               {email.from_name ?? email.from_email}
             </span>
             <span className="ml-auto shrink-0 text-small text-text-tertiary">
-              {formatRelativeTime(email.received_at, MOCK_REFERENCE_NOW_MS)}
+              {formatRelativeTime(email.received_at)}
             </span>
           </div>
           <div className="flex items-center gap-1.5">

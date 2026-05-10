@@ -282,33 +282,102 @@ class ImapConnectRequest(BaseModel):
     response_model=AccountSummary,
     summary="Connect an IMAP mailbox",
     description=(
-        "Saves IMAP credentials. The password lands in the OS keyring "
-        "(Windows Credential Manager / macOS Keychain / libsecret). The "
-        "username and host live alongside the account row. Suitable for "
-        "Outlook, iCloud, Fastmail, mailbox.org, or any local Tutanota / "
-        "Proton bridge. Real fetch loop ships in the next iteration."
+        "Validates the credentials with a real LOGIN against the host, "
+        "stashes the password in the OS keyring (Windows Credential "
+        "Manager / macOS Keychain / libsecret), creates the account "
+        "row, and kicks off the first ingest in a background thread. "
+        "Suitable for Outlook, iCloud, Fastmail, mailbox.org, or any "
+        "local Tutanota / Proton bridge."
     ),
 )
-def connect_imap(body: ImapConnectRequest, session: Session = SessionDep) -> AccountSummary:
+async def connect_imap(
+    body: ImapConnectRequest, session: Session = SessionDep
+) -> AccountSummary:
+    """Verify IMAP credentials, persist, and detach the first ingest."""
     from mailpalace.auth import secrets as secrets_store
 
+    username = body.username or body.email_address
+
+    # Live-validate the credentials BEFORE we persist them. Storing a
+    # bad password in the keyring poisons the next startup; better to
+    # surface the auth error inline and let the user fix the form.
+    await asyncio.to_thread(
+        _imap_login_test, body.host, body.port, username, body.password
+    )
     secrets_store.store("imap", body.email_address, body.password)
-    existing = session.scalar(select(Account).where(Account.email_address == body.email_address))
+
+    existing = session.scalar(
+        select(Account).where(Account.email_address == body.email_address)
+    )
     if existing is not None:
         existing.kind = "imap"
         existing.is_active = True
         existing.last_error = None
-        existing.config_json = {"host": body.host, "port": body.port, "username": body.username}
+        existing.config_json = {
+            "host": body.host,
+            "port": body.port,
+            "username": username,
+        }
         session.commit()
-        return _to_summary(existing)
-    row = Account(
-        kind="imap",
-        label=body.label or body.email_address,
-        email_address=body.email_address,
-        config_json={"host": body.host, "port": body.port, "username": body.username},
-        is_active=True,
-    )
-    session.add(row)
-    session.commit()
-    session.refresh(row)
-    return _to_summary(row)
+        account_id = existing.id
+        summary = _to_summary(existing)
+    else:
+        row = Account(
+            kind="imap",
+            label=body.label or body.email_address,
+            email_address=body.email_address,
+            config_json={"host": body.host, "port": body.port, "username": username},
+            is_active=True,
+        )
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        account_id = row.id
+        summary = _to_summary(row)
+
+    # Match the Gmail flow: detach the first ingest into a daemon
+    # thread so the API call returns immediately and the wizard
+    # exits without waiting on the full backfill.
+    import threading as _threading
+
+    def _thread_target(aid: int = account_id) -> None:
+        try:
+            asyncio.run(ingest_account(aid))
+        except Exception:
+            logger.exception("background imap ingest after connect failed")
+
+    _threading.Thread(
+        target=_thread_target, name=f"imap-ingest-{account_id}", daemon=True
+    ).start()
+
+    return summary
+
+
+def _imap_login_test(host: str, port: int, username: str, password: str) -> None:
+    """Open an SSL IMAP connection and LOGIN, raising on failure.
+
+    Wrapped by `asyncio.to_thread` from the route handler so the
+    blocking socket round-trip does not hold the FastAPI event loop.
+    """
+    import imaplib
+
+    try:
+        client = imaplib.IMAP4_SSL(host, port, timeout=15)
+    except OSError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Could not reach {host}:{port} ({exc.__class__.__name__}: {exc})",
+        ) from exc
+
+    try:
+        client.login(username, password)
+    except imaplib.IMAP4.error as exc:
+        raise HTTPException(
+            status_code=401,
+            detail=f"IMAP server rejected the login: {exc}",
+        ) from exc
+    finally:
+        try:
+            client.logout()
+        except Exception:  # noqa: BLE001
+            pass

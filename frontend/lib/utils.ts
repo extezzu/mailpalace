@@ -26,11 +26,6 @@ export function formatRelativeTime(iso: string, nowMs: number = Date.now()): str
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-/** Reference time used by mock data; lets components render the same relative
- *  strings on the server and the first client render. Real data computes
- *  against `Date.now()` directly. */
-export const MOCK_REFERENCE_NOW_MS = Date.parse("2026-05-10T00:00:00.000Z");
-
 export function senderInitials(name: string | null, email: string): string {
   if (name) {
     const parts = name.trim().split(/\s+/);

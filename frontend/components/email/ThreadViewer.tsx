@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { Archive, Clock, MoreHorizontal, Send, Sparkles } from "lucide-react";
 import type { EmailListItem } from "@/lib/types";
-import { avatarBg, formatRelativeTime, MOCK_REFERENCE_NOW_MS, senderInitials } from "@/lib/utils";
+import { avatarBg, formatRelativeTime, senderInitials } from "@/lib/utils";
 
 interface Props {
   email: EmailListItem;
@@ -135,7 +135,7 @@ export function ThreadViewer({ email, body, bodyHtml, userReply, onMarkRepliedSe
                   &lt;{email.from_email}&gt;
                 </span>
                 <span className="ml-auto text-small text-text-tertiary">
-                  {formatRelativeTime(email.received_at, MOCK_REFERENCE_NOW_MS)} ago
+                  {formatRelativeTime(email.received_at)} ago
                 </span>
               </div>
               <span className="text-small text-text-secondary">to me</span>
