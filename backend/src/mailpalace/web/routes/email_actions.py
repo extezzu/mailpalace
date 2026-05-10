@@ -71,3 +71,27 @@ def bulk_delete(body: BulkRequest, session: Session = SessionDep) -> dict:
     affected = repo.bulk_mark_deleted(session, body.email_ids)
     session.commit()
     return {"affected": affected}
+
+
+@router.post(
+    "/retriage_all",
+    summary="Re-triage every active email through the current LLM provider",
+    description=(
+        "Walks every email currently in the inbox and re-runs the triage "
+        "pipeline against it. Used after the user changes summary_locale "
+        "so existing rows pick up the new language. Returns the number of "
+        "rows that succeeded."
+    ),
+)
+async def retriage_all(session: Session = SessionDep) -> dict:
+    from sqlalchemy import select as sa_select
+
+    from mailpalace.db.schema import Email
+    from mailpalace.pipeline.triage import triage_email
+
+    rows = session.scalars(sa_select(Email.id)).all()
+    success = 0
+    for email_id in rows:
+        if await triage_email(int(email_id)):
+            success += 1
+    return {"requested": len(rows), "succeeded": success}

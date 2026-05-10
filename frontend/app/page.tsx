@@ -266,6 +266,11 @@ export default function HomePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ summary_locale: next }),
       });
+      // Re-triage the whole mailbox so existing summaries pick up the new
+      // language. The endpoint blocks until every email is triaged; for the
+      // 10-row demo this is fine, the v0.1 background-worker pipeline will
+      // make it stream incremental updates over SSE instead.
+      await fetch("/api/retriage_all", { method: "POST" });
     } catch {
       /* setting is in-memory only in v0; OK to fail silently */
     }
