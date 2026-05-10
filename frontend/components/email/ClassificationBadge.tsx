@@ -11,15 +11,25 @@ const STYLES: Record<Classification, { bg: string; text: string; label: string }
   other: { bg: "bg-text-tertiary/12", text: "text-text-tertiary", label: "Other" },
 };
 
+const FALLBACK = STYLES.other;
+
 interface Props {
-  category: Classification | null;
+  // The LLM is free-form, so we accept the raw string and normalise here
+  // rather than rejecting a row when the model invents a slight variant
+  // ("Important" vs "important", or a synonym like "advertising").
+  category: string | null;
   size?: "sm" | "md";
   className?: string;
 }
 
+function lookup(category: string): { bg: string; text: string; label: string } {
+  const key = category.trim().toLowerCase() as Classification;
+  return STYLES[key] ?? FALLBACK;
+}
+
 export function ClassificationBadge({ category, size = "sm", className }: Props) {
   if (!category) return null;
-  const s = STYLES[category];
+  const s = lookup(category);
   return (
     <span
       className={cn(
