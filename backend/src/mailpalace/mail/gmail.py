@@ -21,6 +21,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from mailpalace.auth import gmail_oauth
+from mailpalace.mail._retry import with_gmail_retry
 from mailpalace.mail.base import NormalizedEmail
 
 logger = logging.getLogger(__name__)
@@ -156,7 +157,10 @@ class GmailSource:
         if creds is None:
             raise RuntimeError(f"No stored credentials for {self._email}; reconnect via OAuth")
         self._service = build("gmail", "v1", credentials=creds, cache_discovery=False)
-        profile = self._service.users().getProfile(userId="me").execute()
+        profile = with_gmail_retry(
+            lambda: self._service.users().getProfile(userId="me").execute(),
+            label="getProfile",
+        )
         self._latest_history_id = str(profile.get("historyId"))
 
     async def fetch_since(self, sync_state: str | None) -> AsyncIterator[NormalizedEmail]:
@@ -170,11 +174,16 @@ class GmailSource:
             try:
                 page_token: str | None = None
                 while True:
-                    history = (
-                        self._service.users()
+                    history = with_gmail_retry(
+                        lambda: self._service.users()
                         .history()
-                        .list(userId="me", startHistoryId=sync_state, pageToken=page_token)
-                        .execute()
+                        .list(
+                            userId="me",
+                            startHistoryId=sync_state,
+                            pageToken=page_token,
+                        )
+                        .execute(),
+                        label="history.list",
                     )
                     for record in history.get("history", []):
                         for added in record.get("messagesAdded", []):
@@ -205,16 +214,18 @@ class GmailSource:
                 page_token = None
                 seen = 0
                 while True:
-                    page = (
-                        self._service.users()
+                    current_token = page_token
+                    page = with_gmail_retry(
+                        lambda: self._service.users()
                         .messages()
                         .list(
                             userId="me",
                             q=q,
                             maxResults=100,
-                            pageToken=page_token,
+                            pageToken=current_token,
                         )
-                        .execute()
+                        .execute(),
+                        label=f"messages.list[{q}]",
                     )
                     for entry in page.get("messages", []):
                         message_ids.append((entry["id"], entry["threadId"]))
@@ -233,11 +244,12 @@ class GmailSource:
                 # `format="raw"` already includes `labelIds` in the response,
                 # so a single Gmail call covers both the RFC822 bytes and
                 # the routing labels we use for inbox/spam/sent splits.
-                detail = (
-                    self._service.users()
+                detail = with_gmail_retry(
+                    lambda: self._service.users()
                     .messages()
                     .get(userId="me", id=message_id, format="raw")
-                    .execute()
+                    .execute(),
+                    label="messages.get",
                 )
             except HttpError as exc:
                 logger.warning("messages.get failed for %s: %s", message_id, exc)
@@ -247,7 +259,10 @@ class GmailSource:
 
     async def new_sync_state(self) -> str:
         if self._latest_history_id is None and self._service is not None:
-            profile = self._service.users().getProfile(userId="me").execute()
+            profile = with_gmail_retry(
+                lambda: self._service.users().getProfile(userId="me").execute(),
+                label="getProfile",
+            )
             self._latest_history_id = str(profile.get("historyId"))
         return self._latest_history_id or ""
 
@@ -264,9 +279,13 @@ class GmailSource:
             else {"addLabelIds": ["UNREAD"]}
         )
         try:
-            self._service.users().messages().modify(
-                userId="me", id=provider_msg_id, body=body
-            ).execute()
+            with_gmail_retry(
+                lambda: self._service.users()
+                .messages()
+                .modify(userId="me", id=provider_msg_id, body=body)
+                .execute(),
+                label="messages.modify",
+            )
         except HttpError as exc:
             logger.warning("mark_read failed for %s: %s", provider_msg_id, exc)
 
@@ -275,11 +294,17 @@ class GmailSource:
             await self.connect()
         assert self._service is not None
         try:
-            self._service.users().messages().modify(
-                userId="me",
-                id=provider_msg_id,
-                body={"removeLabelIds": ["INBOX"]},
-            ).execute()
+            with_gmail_retry(
+                lambda: self._service.users()
+                .messages()
+                .modify(
+                    userId="me",
+                    id=provider_msg_id,
+                    body={"removeLabelIds": ["INBOX"]},
+                )
+                .execute(),
+                label="messages.modify",
+            )
         except HttpError as exc:
             logger.warning("archive_remote failed for %s: %s", provider_msg_id, exc)
 
@@ -288,8 +313,12 @@ class GmailSource:
             await self.connect()
         assert self._service is not None
         try:
-            self._service.users().messages().trash(
-                userId="me", id=provider_msg_id
-            ).execute()
+            with_gmail_retry(
+                lambda: self._service.users()
+                .messages()
+                .trash(userId="me", id=provider_msg_id)
+                .execute(),
+                label="messages.trash",
+            )
         except HttpError as exc:
             logger.warning("delete_remote failed for %s: %s", provider_msg_id, exc)
