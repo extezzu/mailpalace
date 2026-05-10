@@ -31,7 +31,6 @@ const PRESETS: { name: string; host: string; port: number }[] = [
   { name: "Fastmail", host: "imap.fastmail.com", port: 993 },
   { name: "Mailbox.org", host: "imap.mailbox.org", port: 993 },
   { name: "Proton (via Proton Bridge)", host: "127.0.0.1", port: 1143 },
-  { name: "Tutanota (via tuta-bridge)", host: "127.0.0.1", port: 1143 },
 ];
 
 const EMPTY_IMAP: ImapForm = {
@@ -270,8 +269,8 @@ export function ConnectInbox({ onConnected }: Props) {
         )}
 
         <p className="text-caption text-text-tertiary">
-          Tutanota: install <code>tuta-bridge</code> locally on 127.0.0.1:1143, then connect
-          via the IMAP tab. Proton: install Proton Bridge first.
+          Tutanota does not expose IMAP and no maintained community bridge exists in 2026.
+          Proton: install Proton Bridge first, then connect via the IMAP tab.
         </p>
       </div>
     </main>

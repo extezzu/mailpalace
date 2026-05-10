@@ -64,7 +64,6 @@ const IMAP_PRESETS = [
   { name: "Fastmail", host: "imap.fastmail.com", port: 993 },
   { name: "Mailbox.org", host: "imap.mailbox.org", port: 993 },
   { name: "Proton (via Proton Bridge)", host: "127.0.0.1", port: 1143 },
-  { name: "Tutanota (via tuta-bridge)", host: "127.0.0.1", port: 1143 },
 ];
 
 export default function SettingsPage() {
