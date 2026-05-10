@@ -230,26 +230,19 @@ class GmailSource:
                 continue
             seen_ids.add(message_id)
             try:
-                # Two API calls per message: `raw` for the RFC822 bytes and
-                # `metadata` for the label ids. The latter is cheap and lets
-                # us preserve Gmail's INBOX / SPAM / SENT / CATEGORY_*
-                # routing on our side.
+                # `format="raw"` already includes `labelIds` in the response,
+                # so a single Gmail call covers both the RFC822 bytes and
+                # the routing labels we use for inbox/spam/sent splits.
                 detail = (
                     self._service.users()
                     .messages()
                     .get(userId="me", id=message_id, format="raw")
                     .execute()
                 )
-                meta = (
-                    self._service.users()
-                    .messages()
-                    .get(userId="me", id=message_id, format="minimal")
-                    .execute()
-                )
             except HttpError as exc:
                 logger.warning("messages.get failed for %s: %s", message_id, exc)
                 continue
-            labels = meta.get("labelIds", [])
+            labels = detail.get("labelIds", [])
             yield _normalise(message_id, thread_id, detail["raw"], labels)
 
     async def new_sync_state(self) -> str:
