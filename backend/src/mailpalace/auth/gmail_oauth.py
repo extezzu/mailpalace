@@ -28,9 +28,14 @@ logger = logging.getLogger(__name__)
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
 
-def _load_client_config() -> dict[str, Any]:
+def _load_client_config_path() -> Path | None:
+    """Return the resolved credentials path, or None when no file is set up."""
     settings = get_settings()
-    path = settings.resolved_google_credentials
+    return settings.resolved_google_credentials
+
+
+def _load_client_config() -> dict[str, Any]:
+    path = _load_client_config_path()
     if path is None:
         raise FileNotFoundError(
             "Google credentials file not found. Save it to "

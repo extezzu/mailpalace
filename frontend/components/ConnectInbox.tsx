@@ -1,11 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Lock, Mail, Server, Sparkles } from "lucide-react";
 
 interface Props {
   onConnected: () => void;
 }
+
+const PHASE_LABEL: Record<string, string> = {
+  awaiting_consent: "Waiting for Google consent…",
+  exchanging: "Exchanging tokens…",
+  ingesting: "Pulling your last 30 days of email…",
+  done: "Done",
+  error: "Failed",
+};
 
 type Mode = "gmail" | "imap";
 
@@ -40,6 +48,55 @@ export function ConnectInbox({ onConnected }: Props) {
   const [status, setStatus] = useState<"idle" | "connecting" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [imap, setImap] = useState<ImapForm>(EMPTY_IMAP);
+  const [phase, setPhase] = useState<string>("idle");
+  const onConnectedRef = useRef(onConnected);
+  onConnectedRef.current = onConnected;
+
+  // Resilience: poll /api/accounts continuously while the wizard is open.
+  // If a hot reload or refresh interrupted the OAuth flow but it still
+  // finished server-side, the wizard hides itself the next time the
+  // account list comes back non-empty.
+  useEffect(() => {
+    let cancelled = false;
+    async function tick() {
+      try {
+        const resp = await fetch("/api/accounts");
+        if (!resp.ok) return;
+        const list = await resp.json();
+        if (!cancelled && Array.isArray(list) && list.length > 0) {
+          onConnectedRef.current();
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    const id = window.setInterval(tick, 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, []);
+
+  // Mirror the backend phase into local state so the button label is honest
+  // about what's happening (Waiting for consent / Exchanging / Ingesting).
+  useEffect(() => {
+    if (status !== "connecting") return;
+    let cancelled = false;
+    const id = window.setInterval(async () => {
+      try {
+        const resp = await fetch("/api/accounts/gmail/status");
+        if (!resp.ok) return;
+        const state: { phase: string } = await resp.json();
+        if (!cancelled) setPhase(state.phase);
+      } catch {
+        /* ignore */
+      }
+    }, 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [status]);
 
   // Pull the active LLM provider so the trust copy reflects what's actually
   // doing the triage. v0 lets the user toggle this in /settings.
@@ -71,8 +128,30 @@ export function ConnectInbox({ onConnected }: Props) {
     setStatus("connecting");
     setErrorMessage(null);
     try {
-      const resp = await fetch("/api/accounts/gmail/connect", { method: "POST" });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${(await resp.text()).slice(0, 240)}`);
+      const startResp = await fetch("/api/accounts/gmail/connect", { method: "POST" });
+      if (!startResp.ok) {
+        throw new Error(`HTTP ${startResp.status}: ${(await startResp.text()).slice(0, 240)}`);
+      }
+      // The backend kicked the OAuth worker. Poll status until it lands in
+      // a terminal state. The dev server can hot-reload the page mid-flow,
+      // so we lean on polling rather than a long-lived fetch.
+      const POLL_MS = 1500;
+      const TIMEOUT_MS = 10 * 60 * 1000;
+      const startedAt = Date.now();
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+        if (Date.now() - startedAt > TIMEOUT_MS) {
+          throw new Error("Timed out waiting for Google consent.");
+        }
+        const statusResp = await fetch("/api/accounts/gmail/status");
+        if (!statusResp.ok) continue;
+        const state: { phase: string; error: string | null } = await statusResp.json();
+        if (state.phase === "done") break;
+        if (state.phase === "error") {
+          throw new Error(state.error ?? "OAuth flow failed.");
+        }
+      }
       onConnected();
       setStatus("idle");
     } catch (exc) {
@@ -156,7 +235,9 @@ export function ConnectInbox({ onConnected }: Props) {
             className="inline-flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-body font-medium text-surface hover:opacity-90 disabled:cursor-wait disabled:opacity-60"
             style={{ backgroundColor: "rgb(var(--accent))" }}
           >
-            {status === "connecting" ? "Waiting for Google consent…" : "Continue with Google"}
+            {status === "connecting"
+              ? PHASE_LABEL[phase] ?? "Waiting for Google consent…"
+              : "Continue with Google"}
           </button>
         ) : (
           <ImapForm
