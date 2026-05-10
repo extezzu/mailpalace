@@ -1,167 +1,126 @@
 # MailPalace
 
-A local-first email triage tool. Reads your inbox, classifies each message, writes a Russian summary, and drafts replies in the language of the incoming email. Runs Ollama on your laptop by default; Anthropic and OpenAI keys are optional fallbacks.
+**Local-first email triage with AI.** Reads your inbox, classifies every message, writes a summary in your language, drafts replies. Runs on your laptop. Email bytes never leave the box unless you explicitly switch to a remote LLM.
 
-> Status: v0. The dashboard ships with seeded demo data so you can see the design without connecting a mailbox. Gmail OAuth and the IMAP fetch loop land in v0.1.
+```
+┌──────────┬────────────────────────┬───────────────┐
+│ Sidebar  │ Inbox / Sent (chat)    │ Thread + AI   │
+│ Inbox    │ ◾ Sender · 5m          │ Subject       │
+│ Sent     │   Subject              │ ─────────────│
+│ Spam     │   Snippet…             │ <body>        │
+│ Trash    │ ◾ Sender · 23h         │               │
+│          │   Subject              │ Draft with AI │
+│ Urgent   │   Snippet…             │ Send / Snooze │
+│ Newsletter                                        │
+└──────────┴────────────────────────┴───────────────┘
+```
 
-## Why this exists
+## What it does
 
-The cloud-hosted AI inbox tools (Superhuman, Shortwave, Cora) read your mail on their servers. That is a non-starter for anyone with attorney-client privilege, NDA-bound communication, or HIPAA-shaped data. MailPalace keeps email bytes on disk and runs the LLM call against a local Ollama instance. The default install never sends a single subject line off the box.
-
-## Features
-
-- Classifies every email into one of `urgent`, `important`, `newsletter`, `promotion`, `transactional`, `spam`, `other`.
-- Writes a two-line Russian summary addressed to the user (`ты` form, configurable).
-- Generates a reply draft in the source language of the email. Free-form instructions steer the tone.
-- Provider switch via one env var: Ollama, Anthropic, OpenAI, or any OpenAI-compatible endpoint.
-- Mail sources: Gmail native API in v0.1; IMAP via `imaplib` covers Outlook, iCloud, Fastmail, and Tutanota (via the `tuta-bridge` community tool).
-- No Docker, no Postgres, no Redis. SQLite WAL only.
-- Web dashboard built on Next.js 15 + Tailwind + Geist Sans. Three-panel master / detail / AI sidebar layout.
-- 15 unit and integration tests; smoke test exercises the full HTTP surface.
+- **Connects to Gmail (OAuth) or any IMAP host.** Multi-account out of the box.
+- **Triages every email** into `urgent`, `important`, `newsletter`, `promotion`, `transactional`, `spam`, or `other`. Trusts Gmail's own labels for 80% of inbox so the local LLM is only invoked on Primary-tab messages.
+- **Summarises in your language.** Pick from English, Russian, Ukrainian, Polish, German, French, Spanish, and 16 others in Settings.
+- **Drafts replies in the source language.** Free-form `instructions` field steers tone.
+- **Sends real email back** through Gmail's `users.messages.send`. Reply lands on the same thread, with proper `In-Reply-To` headers.
+- **Two-way sync.** Archive / read / delete in MailPalace propagates to Gmail; the inverse propagates back via `users.history.list`.
+- **Telegram-style Sent view.** Every conversation is a chat with bubbles, not a flat list.
+- **No cloud.** SQLite WAL on disk. Refresh tokens in the OS keyring (Windows Credential Manager, macOS Keychain, libsecret).
 
 ## Quick start
 
-Two terminals.
+> **TL;DR:** Two terminals, two `pip install` / `npm install`, one Google Cloud Desktop OAuth client, then go.
 
-Backend:
+Full guide with every click: [`SETUP.md`](SETUP.md).
 
 ```bash
+# 1. Clone
+git clone https://github.com/extezzu/mailpalace
+cd mailpalace
+
+# 2. Backend
 cd backend
 pip install -e ".[dev]"
-mailpalace seed
-mailpalace serve
-```
+mailpalace serve            # listens on 127.0.0.1:7330
 
-The API listens on `127.0.0.1:7330`.
-
-Frontend:
-
-```bash
+# 3. Frontend (new terminal)
 cd frontend
 npm install
-npm run dev
+npm run build && npm start  # serves on :3000
+
+# 4. Open http://localhost:3000
+#    First load shows the connect wizard — Continue with Google.
 ```
 
-Open `http://localhost:3000`. The Next.js dev server proxies `/api/*` to the backend.
+You also need:
 
-End-to-end smoke check (no servers required):
-
-```bash
-python scripts/smoke.py
-```
-
-## Provider configuration
-
-The default install runs Ollama on the user's machine. The model is local and the backend never falls back to a templated draft -- if no provider is reachable, `/api/draft` returns a 503 and the dashboard tells you which install step is missing.
-
-### Install Ollama (Windows)
-
-```powershell
-winget install --id=Ollama.Ollama -e --accept-source-agreements --accept-package-agreements
-# launch the tray daemon (binds 127.0.0.1:11434)
-& "$env:LOCALAPPDATA\Programs\Ollama\ollama app.exe"
-ollama pull llama3.1:8b   # ~4.7 GB; lighter alternatives: llama3.2:3b, qwen2.5:3b
-```
-
-### Install Ollama (macOS)
-
-```bash
-brew install ollama        # or download from https://ollama.com/download
-ollama serve &
-ollama pull llama3.1:8b
-```
-
-### Install Ollama (Linux)
-
-```bash
-curl -fsSL https://ollama.com/install.sh | sh
-systemctl --user enable --now ollama
-ollama pull llama3.1:8b
-```
-
-### Use Anthropic or OpenAI instead
-
-```bash
-export MAILPALACE_ACTIVE_PROVIDER=anthropic
-export MAILPALACE_ANTHROPIC_API_KEY=sk-ant-...
-mailpalace serve
-```
-
-| Provider  | Env var                          | Default model       |
-| --------- | -------------------------------- | ------------------- |
-| Ollama    | `MAILPALACE_OLLAMA_BASE_URL`     | `llama3.1:8b`       |
-| Anthropic | `MAILPALACE_ANTHROPIC_API_KEY`   | `claude-haiku-4-5`  |
-| OpenAI    | `MAILPALACE_OPENAI_API_KEY`      | `gpt-4o-mini`       |
-
-Fallback chain is opt-in. The router never silently falls back from a local provider to a remote one without explicit configuration:
-
-```bash
-export MAILPALACE_FALLBACK_CHAIN='["anthropic"]'
-```
+- **Ollama** running locally for triage. `ollama pull llama3.2:1b` then start the daemon. Skip if you plan to use Anthropic or OpenAI keys (configurable in Settings).
+- **A Google Cloud OAuth Desktop client** saved to `~/.mailpalace/google_credentials.json`. Walkthrough in [`SETUP.md`](SETUP.md).
 
 ## Architecture
 
-Two services. They talk REST and SSE on `127.0.0.1:7330`.
-
 ```
-+-- frontend/ ------+      +-- backend/ -----------------+
-|  Next.js 15       |      |  FastAPI                    |
-|  Tailwind         | <==> |  /api/inbox                 |
-|  Geist Sans       |      |  /api/email/{id}            |
-|  three-panel UI   |      |  /api/draft                 |
-+-------------------+      |  /api/settings              |
-                           |  /api/events  (SSE)         |
-                           +-----+--------+--------------+
-                                 |        |
-                       +---------v---+ +--+--------------+
-                       | SQLite (WAL)| | LLM router      |
-                       | mail.db     | | -> Ollama       |
-                       +-------------+ | -> Anthropic    |
-                                       | -> OpenAI       |
-                                       +-----------------+
+┌─ frontend (Next.js 15 + Tailwind) ──┐    ┌─ backend (FastAPI) ─────────┐
+│  app/page.tsx          inbox        │    │  /api/inbox                 │
+│  components/email/...               │◄──►│  /api/email/{id}/{send,…}   │
+│  components/settings/...            │    │  /api/threads               │
+└─────────────────────────────────────┘    │  /api/accounts              │
+                                           │  /api/settings              │
+                                           └────────┬────────────────────┘
+                                                    │
+                ┌─────────────┐  ┌─────────────┐    │     ┌─────────────────┐
+                │ Gmail API   │  │ IMAP server │    │     │ LLM router      │
+                │ (gmail.modify)│ (RFC 3501)  │◄───┤     │ Ollama / Claude │
+                └─────────────┘  └─────────────┘    │     │  / OpenAI       │
+                                                    │     └─────────────────┘
+                                                    ▼
+                                          ┌─────────────────┐
+                                          │ SQLite (WAL)    │
+                                          │ ~/.mailpalace/  │
+                                          │   mail.db       │
+                                          └─────────────────┘
 ```
 
-Full architecture spec: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
-Frontend design tokens and component catalog: [`docs/DESIGN.md`](docs/DESIGN.md).
+Every external call (Gmail HTTP, IMAP socket, Ollama HTTP) is wrapped in `asyncio.to_thread` so the FastAPI event loop never stalls on a synchronous SDK. Gmail's `messages.list` calls go through a `with_gmail_retry` wrapper for 429/5xx tolerance.
 
-## Layout
+## Project layout
 
 ```
 mailpalace/
-  backend/
-    pyproject.toml
-    src/mailpalace/
-      __main__.py       CLI entry
-      config.py         Pydantic Settings
-      db/               schema, repo, seed, engine
-      llm/              Protocol, Ollama provider, router
-      mail/             Gmail and IMAP source adapters
-      pipeline/         triage, draft, language detection
-      auth/             secrets storage (keyring + Fernet fallback)
-      web/              FastAPI app and routes
-    tests/              15 tests
-  frontend/
-    package.json
-    app/                Next.js App Router
-    components/email/   list item, filter bar, thread view, AI sidebar
-    lib/                types, mock data, utils
-  scripts/smoke.py
-  docs/
-    ARCHITECTURE.md
-    DESIGN.md
-    MANUAL_TEST_PLAN.md
+├── backend/
+│   ├── pyproject.toml
+│   └── src/mailpalace/
+│       ├── auth/        OAuth + keyring secrets
+│       ├── db/          SQLAlchemy schema, repo
+│       ├── llm/         Ollama / Anthropic / OpenAI providers + router
+│       ├── mail/        Gmail and IMAP sources, RFC822 parsing
+│       ├── pipeline/    ingest, triage, draft generation
+│       └── web/         FastAPI app + routes
+├── frontend/
+│   ├── package.json
+│   ├── app/             Next.js App Router (page.tsx, settings/, layout.tsx)
+│   └── components/
+│       ├── email/       list item, thread viewer, sent chat, snooze menu, …
+│       └── settings/    accounts section, LLM provider section
+├── docs/                ARCHITECTURE.md, DESIGN.md, MANUAL_TEST_PLAN.md
+├── SETUP.md             step-by-step setup guide for humans + AI
+└── scripts/
 ```
 
 ## Roadmap
 
-v0 (this release): scaffold complete, dashboard shows seeded data. Ollama provider wired and tested.
-
-v0.1: Gmail OAuth installed-app flow with refresh tokens in the OS keyring; IMAP fetch loop with UIDVALIDITY tracking; APScheduler 15-minute poll cycle and async triage worker; PWA manifest so the dashboard installs as an OS app; live data fetch in the frontend (TanStack Query).
-
-v0.2: `gmail.modify` scope for archive, label, send; FTS5 full-text search; settings page accounts CRUD wired to OAuth.
-
-v1: multi-user mode (Postgres migration path documented in the spec); embeddings and semantic search; optional hosted tier under the same MIT license.
+- [x] Real Gmail OAuth + `gmail.modify`
+- [x] Real IMAP fetch with UIDVALIDITY-aware incremental sync
+- [x] Bidirectional sync (Gmail labels ↔ local state)
+- [x] Real send / reply / archive / snooze / trash
+- [x] Multi-account
+- [x] Telegram-style Sent chat view
+- [x] Live LLM provider switch with API-key input + keyring storage
+- [ ] SMTP send for IMAP accounts (Gmail-only today)
+- [ ] APScheduler for snoozed-message wake-up
+- [ ] PWA manifest so the dashboard installs as a native-feeling app
+- [ ] Push notifications via Gmail Pub/Sub watch
+- [ ] FTS5 full-text search
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [`LICENSE`](LICENSE).
