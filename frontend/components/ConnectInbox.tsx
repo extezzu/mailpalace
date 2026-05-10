@@ -131,9 +131,9 @@ export function ConnectInbox({ onConnected }: Props) {
       if (!startResp.ok) {
         throw new Error(`HTTP ${startResp.status}: ${(await startResp.text()).slice(0, 240)}`);
       }
-      // The backend kicked the OAuth worker. Poll status until it lands in
-      // a terminal state. The dev server can hot-reload the page mid-flow,
-      // so we lean on polling rather than a long-lived fetch.
+      // Poll for either a) the account row appearing in /api/accounts (we
+      // can hide the wizard the instant the row exists, even before the
+      // first ingest finishes), or b) the OAuth status flipping to error.
       const POLL_MS = 1500;
       const TIMEOUT_MS = 10 * 60 * 1000;
       const startedAt = Date.now();
@@ -143,12 +143,26 @@ export function ConnectInbox({ onConnected }: Props) {
         if (Date.now() - startedAt > TIMEOUT_MS) {
           throw new Error("Timed out waiting for Google consent.");
         }
-        const statusResp = await fetch("/api/accounts/gmail/status");
-        if (!statusResp.ok) continue;
-        const state: { phase: string; error: string | null } = await statusResp.json();
-        if (state.phase === "done") break;
-        if (state.phase === "error") {
-          throw new Error(state.error ?? "OAuth flow failed.");
+        try {
+          const accountsResp = await fetch("/api/accounts");
+          if (accountsResp.ok) {
+            const list = await accountsResp.json();
+            if (Array.isArray(list) && list.length > 0) break;
+          }
+        } catch {
+          /* keep polling */
+        }
+        try {
+          const statusResp = await fetch("/api/accounts/gmail/status");
+          if (statusResp.ok) {
+            const state: { phase: string; error: string | null } = await statusResp.json();
+            if (state.phase === "error") {
+              throw new Error(state.error ?? "OAuth flow failed.");
+            }
+            if (state.phase === "ingesting" || state.phase === "done") break;
+          }
+        } catch (exc) {
+          if (exc instanceof Error && exc.message.includes("OAuth flow failed")) throw exc;
         }
       }
       onConnected();
