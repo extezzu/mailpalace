@@ -10,7 +10,6 @@ import { StatusBar } from "@/components/StatusBar";
 import { ThreadViewer } from "@/components/email/ThreadViewer";
 import { AiMetaSidebar } from "@/components/email/AiMetaSidebar";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { MOCK_EMAILS } from "@/lib/mock-data";
 import type { Filter } from "@/components/email/FilterBar";
 import type { Classification, EmailListItem } from "@/lib/types";
 
@@ -101,10 +100,10 @@ async function fetchInbox(): Promise<EmailListItem[]> {
 export default function HomePage() {
   const router = useRouter();
   const [activeFilter, setActiveFilter] = useState<Filter>("inbox");
-  const [selectedId, setSelectedId] = useState<number | null>(MOCK_EMAILS[0]?.id ?? null);
-  const [emails, setEmails] = useState<EmailListItem[]>(MOCK_EMAILS);
-  const [flags, setFlags] = useState<Record<number, RowFlags>>(() => buildFlagsFor(MOCK_EMAILS));
-  const [accountEmail, setAccountEmail] = useState("demo@mailpalace.local");
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [emails, setEmails] = useState<EmailListItem[]>([]);
+  const [flags, setFlags] = useState<Record<number, RowFlags>>({});
+  const [accountEmail, setAccountEmail] = useState("");
   const [summaryLocale, setSummaryLocale] = useState<string>("en");
   const [retriaging, setRetriaging] = useState(false);
   const [retriageProgress, setRetriageProgress] = useState<{ current: number; total: number } | null>(null);
@@ -146,13 +145,11 @@ export default function HomePage() {
             setAccountEmail(accountList[0].email_address);
           }
         }
-        if (inbox.length > 0) {
-          setEmails(inbox);
-          setFlags(buildFlagsFor(inbox));
-          setSelectedId(inbox[0].id);
-        }
+        setEmails(inbox);
+        setFlags(buildFlagsFor(inbox));
+        setSelectedId(inbox[0]?.id ?? null);
       } catch {
-        /* fall back to MOCK_EMAILS already in state */
+        /* leave inbox empty; the UI renders the wizard or empty state */
       } finally {
         if (!cancelled) setAccountsLoaded(true);
       }
@@ -339,7 +336,8 @@ export default function HomePage() {
         if (Date.now() - startedAt > TIMEOUT_MS) break;
       }
       const fresh = await fetchInbox();
-      if (fresh.length > 0) setEmails(fresh);
+      setEmails(fresh);
+      setFlags(buildFlagsFor(fresh));
     } catch {
       /* leave the previous summaries in place */
     } finally {
