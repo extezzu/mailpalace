@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ConnectInbox } from "@/components/ConnectInbox";
 import { EmailListItem as EmailRow } from "@/components/email/EmailListItem";
 import { NewsletterDigest } from "@/components/email/NewsletterDigest";
 import { Sidebar } from "@/components/email/Sidebar";
@@ -107,22 +108,43 @@ export default function HomePage() {
   const [summaryLocale, setSummaryLocale] = useState<string>("en");
   const [retriaging, setRetriaging] = useState(false);
   const [retriageProgress, setRetriageProgress] = useState<{ current: number; total: number } | null>(null);
+  const [accounts, setAccounts] = useState<{ id: number; email_address: string }[]>([]);
+  const [accountsLoaded, setAccountsLoaded] = useState(false);
 
-  // On mount: pull settings + the live inbox. The mock data only acts as a
-  // fallback for when the backend is unreachable (e.g. during a static
-  // preview).
+  async function reloadAccounts(): Promise<{ id: number; email_address: string }[]> {
+    try {
+      const resp = await fetch("/api/accounts");
+      if (!resp.ok) return [];
+      const list: { id: number; email_address: string }[] = await resp.json();
+      setAccounts(list);
+      if (list.length > 0) setAccountEmail(list[0].email_address);
+      return list;
+    } catch {
+      return [];
+    }
+  }
+
+  // On mount: pull accounts, settings, and the live inbox. The mock data is
+  // only used as a fallback when the backend is unreachable.
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
-        const [settingsResp, inbox] = await Promise.all([
+        const [settingsResp, inbox, accountList] = await Promise.all([
           fetch("/api/settings"),
           fetchInbox(),
+          fetch("/api/accounts").then((r) => (r.ok ? r.json() : [])),
         ]);
         if (cancelled) return;
         if (settingsResp.ok) {
           const data = await settingsResp.json();
           setSummaryLocale(data.summary_locale ?? "en");
+        }
+        if (Array.isArray(accountList)) {
+          setAccounts(accountList);
+          if (accountList.length > 0) {
+            setAccountEmail(accountList[0].email_address);
+          }
         }
         if (inbox.length > 0) {
           setEmails(inbox);
@@ -131,6 +153,8 @@ export default function HomePage() {
         }
       } catch {
         /* fall back to MOCK_EMAILS already in state */
+      } finally {
+        if (!cancelled) setAccountsLoaded(true);
       }
     }
     load();
@@ -324,6 +348,12 @@ export default function HomePage() {
     }
   }
 
+
+  // First-run wizard. We wait until we've actually heard from /api/accounts
+  // so we don't flash the wizard during the initial load.
+  if (accountsLoaded && accounts.length === 0) {
+    return <ConnectInbox onConnected={reloadAccounts} />;
+  }
 
   return (
     <main className="flex h-screen w-screen flex-col overflow-hidden">

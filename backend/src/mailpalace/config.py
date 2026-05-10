@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     # When True, /api/inbox is allowed to serve mock data without a DB.
     demo_mode: bool = False
 
+    # OAuth credentials (Google Cloud Console -> Credentials -> Desktop app).
+    # Path to the downloaded `client_secret_*.json`. We resolve it lazily
+    # so the app can boot without Gmail configured.
+    google_credentials_file: Path | None = None
+
     @property
     def db_path(self) -> Path:
         return self.data_dir / "mail.db"
@@ -69,6 +74,14 @@ class Settings(BaseSettings):
     @property
     def logs_dir(self) -> Path:
         return self.data_dir / "logs"
+
+    @property
+    def resolved_google_credentials(self) -> Path | None:
+        """Return the credentials file location, falling back to data_dir."""
+        if self.google_credentials_file is not None:
+            return self.google_credentials_file
+        default = self.data_dir / "google_credentials.json"
+        return default if default.exists() else None
 
 
 _settings: Settings | None = None
