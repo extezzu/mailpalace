@@ -5,13 +5,14 @@ from __future__ import annotations
 import logging
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from mailpalace.auth import gmail_oauth
 from mailpalace.db.schema import Account
+from mailpalace.pipeline.ingest import ingest_account
 from mailpalace.web.deps import SessionDep
 
 logger = logging.getLogger(__name__)
@@ -72,7 +73,9 @@ def delete_account(account_id: int, session: Session = SessionDep) -> None:
         "it returns."
     ),
 )
-def connect_gmail(session: Session = SessionDep) -> AccountSummary:
+def connect_gmail(
+    background: BackgroundTasks, session: Session = SessionDep
+) -> AccountSummary:
     try:
         creds, profile = gmail_oauth.run_install_flow()
     except FileNotFoundError as exc:
@@ -96,6 +99,7 @@ def connect_gmail(session: Session = SessionDep) -> AccountSummary:
         existing.is_active = True
         existing.last_error = None
         session.commit()
+        background.add_task(ingest_account, existing.id)
         return _to_summary(existing)
 
     row = Account(
@@ -108,4 +112,14 @@ def connect_gmail(session: Session = SessionDep) -> AccountSummary:
     session.add(row)
     session.commit()
     session.refresh(row)
+    background.add_task(ingest_account, row.id)
     return _to_summary(row)
+
+
+@router.post("/accounts/{account_id}/sync", summary="Force a sync for a connected account")
+async def sync_account(account_id: int, session: Session = SessionDep) -> dict:
+    row = session.get(Account, account_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    new_count, error_count = await ingest_account(account_id)
+    return {"new": new_count, "errors": error_count}
