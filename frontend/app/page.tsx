@@ -46,7 +46,7 @@ function rowIsActive(flags: RowFlags | undefined): boolean {
 
 
 async function fetchInbox(): Promise<EmailListItem[]> {
-  const resp = await fetch(api("/api/inbox?folder=all&limit=500"));
+  const resp = await fetch(api("/api/inbox?folder=all&limit=1000"));
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   const data = await resp.json();
   return data.emails as EmailListItem[];

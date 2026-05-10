@@ -69,6 +69,28 @@ def _normalise_classification(value: object) -> str:
     return "other"
 
 
+_LABEL_FAST_PATH: tuple[tuple[str, str], ...] = (
+    # Order matters: SPAM/TRASH first so we never spend an LLM call on them.
+    # CATEGORY_* labels come from Gmail's own classifier; trusting them
+    # cuts the triage queue from ~700 to ~50-150 on a typical mailbox and
+    # turns first-paint of the dashboard from minutes into seconds.
+    ("SPAM", "spam"),
+    ("TRASH", "other"),
+    ("CATEGORY_PROMOTIONS", "promotion"),
+    ("CATEGORY_UPDATES", "newsletter"),
+    ("CATEGORY_FORUMS", "newsletter"),
+    ("CATEGORY_SOCIAL", "newsletter"),
+)
+
+
+def _fast_path_classification(provider_labels: list[str]) -> str | None:
+    label_set = set(provider_labels or [])
+    for label, classification in _LABEL_FAST_PATH:
+        if label in label_set:
+            return classification
+    return None
+
+
 async def triage_email(email_id: int) -> bool:
     """Run the triage pipeline against a single email. Returns True on success."""
     settings = get_settings()
@@ -78,6 +100,36 @@ async def triage_email(email_id: int) -> bool:
             return False
         body = email.body_text or email.snippet or ""
         language = detect_language(body)
+        provider_labels = list(email.provider_labels or [])
+
+        # Gmail label fast path: skip the LLM entirely when Gmail has already
+        # categorised the message. The summary stays empty (the dashboard
+        # falls back to the snippet) so the row still has an `ai` block and
+        # no longer counts as "untriaged".
+        fast_classification = _fast_path_classification(provider_labels)
+        if fast_classification is not None:
+            upsert_ai_metadata(
+                session,
+                email_id,
+                language_code=language,
+                classification=fast_classification,
+                classification_confidence=0.95,
+                summary=None,
+                summary_locale=settings.summary_locale,
+                suggested_action=None,
+                provider_used=f"gmail-label:{fast_classification}",
+                error_message=None,
+                retry_count=0,
+            )
+            return True
+
+        # Cap the prompt body. Long marketing HTML stripped to text can run
+        # 10k+ chars; the 1B model's 4k context starts dropping the JSON
+        # closing brace. 1500 chars is enough for the LLM to classify and
+        # summarise without truncating the response.
+        if len(body) > 1500:
+            body = body[:1500]
+
         system, user = build_triage_prompt(
             from_name=email.from_name,
             from_email=email.from_email,
@@ -96,7 +148,7 @@ async def triage_email(email_id: int) -> bool:
         ],
         response_format="json",
         temperature=0.1,
-        max_tokens=400,
+        max_tokens=600,
     )
 
     try:
