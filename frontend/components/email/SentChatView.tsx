@@ -162,8 +162,10 @@ function ThreadListPane({
               type="button"
               onClick={() => onSelect(thread.thread_id)}
               className={
-                "flex w-full items-start gap-3 border-b border-border px-3 py-3 text-left transition-colors " +
-                (active ? "bg-surface-elevated" : "hover:bg-surface-elevated")
+                "flex w-full items-start gap-3 border-b border-l-[3px] border-border px-3 py-3 text-left transition-colors " +
+                (active
+                  ? "border-l-accent bg-accent/10"
+                  : "border-l-transparent hover:bg-surface-elevated")
               }
             >
               <div

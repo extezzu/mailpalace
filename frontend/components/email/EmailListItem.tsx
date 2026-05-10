@@ -37,11 +37,20 @@ export function EmailListItem({
       }}
       className={cn(
         "group relative w-full cursor-pointer text-left transition-colors",
-        "border-l-2",
-        isUnread ? "border-l-accent" : "border-l-transparent",
+        // Selected: thick accent left bar + accent-tinted background +
+        // inset ring so the active row stands out at a glance.
+        // Hover (when not selected): a notch toward surface-elevated so
+        // pointer feedback is visible without competing with the
+        // selected row's stronger treatment.
+        // Unread (when neither): thin accent bar only, leaves the
+        // background neutral.
         isSelected
-          ? "bg-surface-elevated"
-          : "bg-surface hover:bg-surface-elevated",
+          ? "border-l-[3px] border-l-accent bg-accent/10 ring-1 ring-inset ring-accent/30"
+          : cn(
+              "border-l-2",
+              isUnread ? "border-l-accent" : "border-l-transparent",
+              "bg-surface hover:bg-surface-elevated",
+            ),
       )}
     >
       <div className="flex h-[60px] items-center gap-3 px-3 border-b border-border">
