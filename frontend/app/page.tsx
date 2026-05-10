@@ -51,9 +51,9 @@ const BODIES: Record<number, string> = {
 
 const NEWSLETTERS: Classification[] = ["newsletter", "promotion"];
 
-function buildInitialFlags(): Record<number, RowFlags> {
+function buildFlagsFor(emails: EmailListItem[]): Record<number, RowFlags> {
   const out: Record<number, RowFlags> = {};
-  for (const email of MOCK_EMAILS) {
+  for (const email of emails) {
     out[email.id] = {
       read: !email.is_unread,
       snoozed: false,
@@ -90,27 +90,46 @@ function importanceRank(email: EmailListItem): number {
   return base + conf;
 }
 
+async function fetchInbox(): Promise<EmailListItem[]> {
+  const resp = await fetch("/api/inbox?folder=all&limit=200");
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  const data = await resp.json();
+  return data.emails as EmailListItem[];
+}
+
 export default function HomePage() {
   const router = useRouter();
   const [activeFilter, setActiveFilter] = useState<Filter>("inbox");
   const [selectedId, setSelectedId] = useState<number | null>(MOCK_EMAILS[0]?.id ?? null);
-  const [flags, setFlags] = useState<Record<number, RowFlags>>(() => buildInitialFlags());
+  const [emails, setEmails] = useState<EmailListItem[]>(MOCK_EMAILS);
+  const [flags, setFlags] = useState<Record<number, RowFlags>>(() => buildFlagsFor(MOCK_EMAILS));
   const [accountEmail, setAccountEmail] = useState("demo@mailpalace.local");
   const [summaryLocale, setSummaryLocale] = useState<string>("en");
+  const [retriaging, setRetriaging] = useState(false);
 
-  // Pull the active account label and the current summary locale from the
-  // backend on mount; fall back to demo defaults if the API is unreachable.
+  // On mount: pull settings + the live inbox. The mock data only acts as a
+  // fallback for when the backend is unreachable (e.g. during a static
+  // preview).
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
-        const settingsResp = await fetch("/api/settings");
-        if (settingsResp.ok && !cancelled) {
+        const [settingsResp, inbox] = await Promise.all([
+          fetch("/api/settings"),
+          fetchInbox(),
+        ]);
+        if (cancelled) return;
+        if (settingsResp.ok) {
           const data = await settingsResp.json();
           setSummaryLocale(data.summary_locale ?? "en");
         }
+        if (inbox.length > 0) {
+          setEmails(inbox);
+          setFlags(buildFlagsFor(inbox));
+          setSelectedId(inbox[0].id);
+        }
       } catch {
-        /* ignore; keep defaults */
+        /* fall back to MOCK_EMAILS already in state */
       }
     }
     load();
@@ -119,14 +138,14 @@ export default function HomePage() {
     };
   }, []);
 
-  // Apply per-row flags onto the mock dataset.
+  // Apply per-row flags onto whichever dataset is current (live or mock).
   const liveEmails: EmailListItem[] = useMemo(
     () =>
-      MOCK_EMAILS.map((email) => ({
+      emails.map((email) => ({
         ...email,
         is_unread: !flags[email.id]?.read,
       })),
-    [flags],
+    [emails, flags],
   );
 
   const counts = useMemo(() => {
@@ -260,6 +279,7 @@ export default function HomePage() {
 
   async function changeSummaryLocale(next: string) {
     setSummaryLocale(next);
+    setRetriaging(true);
     try {
       await fetch("/api/settings", {
         method: "PATCH",
@@ -269,10 +289,17 @@ export default function HomePage() {
       // Re-triage the whole mailbox so existing summaries pick up the new
       // language. The endpoint blocks until every email is triaged; for the
       // 10-row demo this is fine, the v0.1 background-worker pipeline will
-      // make it stream incremental updates over SSE instead.
+      // stream incremental updates over SSE instead.
       await fetch("/api/retriage_all", { method: "POST" });
+      // Refetch so the new summaries actually land in the UI.
+      const fresh = await fetchInbox();
+      if (fresh.length > 0) {
+        setEmails(fresh);
+      }
     } catch {
-      /* setting is in-memory only in v0; OK to fail silently */
+      /* leave the previous summaries in place */
+    } finally {
+      setRetriaging(false);
     }
   }
 
@@ -285,6 +312,7 @@ export default function HomePage() {
         triagedCount={triagedCount}
         totalCount={liveEmails.length}
         summaryLocale={summaryLocale}
+        retriaging={retriaging}
         onSummaryLocaleChange={changeSummaryLocale}
       />
       <div className="flex flex-1 min-h-0">

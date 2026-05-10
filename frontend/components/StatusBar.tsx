@@ -9,6 +9,7 @@ interface Props {
   triagedCount: number;
   totalCount: number;
   summaryLocale: string;
+  retriaging?: boolean;
   onSummaryLocaleChange: (locale: string) => void;
 }
 
@@ -52,6 +53,7 @@ export function StatusBar({
   triagedCount,
   totalCount,
   summaryLocale,
+  retriaging,
   onSummaryLocaleChange,
 }: Props) {
   const [llmHealthy, setLlmHealthy] = useState<boolean | null>(null);
@@ -109,7 +111,8 @@ export function StatusBar({
           value={summaryLocale}
           onChange={(event) => onSummaryLocaleChange(event.target.value)}
           aria-label="Summary language"
-          className="rounded border border-border bg-surface px-1.5 py-0.5 text-text-primary outline-none focus:border-accent"
+          disabled={retriaging}
+          className="rounded border border-border bg-surface px-1.5 py-0.5 text-text-primary outline-none focus:border-accent disabled:opacity-60"
         >
           {SUMMARY_LANGS.map((lang) => (
             <option key={lang.code} value={lang.code}>
@@ -117,6 +120,9 @@ export function StatusBar({
             </option>
           ))}
         </select>
+        {retriaging && (
+          <span className="text-text-tertiary">retriaging…</span>
+        )}
       </span>
 
       <span className="ml-auto" title={triagedTitle}>
